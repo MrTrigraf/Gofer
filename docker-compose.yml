@@ -1,7 +1,7 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  gofer_db:
     container_name: gofer_db
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: gofer
       POSTGRES_PASSWORD: gofer
