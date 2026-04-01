@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+database:
+  host: localhost
+  port: 5432
+  user: gofer
+  password: gofer
+  name: gofer
+  sslmode: disable
+
+jwt:
+  access_ttl: 15m
+  refresh_ttl: 168h
