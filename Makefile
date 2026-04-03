@@ -13,7 +13,7 @@ run-client:
 	go run ./cmd/client/...
 
 migrate-up:
-	go run ./cmd/migrate/up
+	migrate -path ./migration -database "postgres://gofer:gofer@localhost:5432/gofer?sslmode=disable" up
 
 migrate-down:
-	go run ./cmd/migrate/down
+	migrate -path ./migration -database "postgres://gofer:gofer@localhost:5432/gofer?sslmode=disable" down
