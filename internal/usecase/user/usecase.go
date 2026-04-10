@@ -18,7 +18,7 @@ func New(userRepo usecase.UserRepository) *UserUseCase {
 func (uc *UserUseCase) GetProfile(id string) (domain.User, error) {
 	user, err := uc.userRepo.FindByID(id)
 	if err != nil {
-		return domain.User{}, domain.ErrUserNotFound
+		return domain.User{}, fmt.Errorf("get profile: %w", err)
 	}
 
 	return user, nil
