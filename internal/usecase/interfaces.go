@@ -1,38 +1,42 @@
 package usecase
 
-import "github.com/gofer/internal/domain"
+import (
+	"context"
+
+	"github.com/gofer/internal/domain"
+)
 
 type UserRepository interface {
-	Create(user domain.User) (domain.User, error)
-	FindByID(id string) (domain.User, error)
-	FindByUsername(username string) (domain.User, error)
-	SearchByUsername(query string) ([]domain.User, error)
+	Create(ctx context.Context, user domain.User) (domain.User, error)
+	FindByID(ctx context.Context, id string) (domain.User, error)
+	FindByUsername(ctx context.Context, username string) (domain.User, error)
+	SearchByUsername(ctx context.Context, query string) ([]domain.User, error)
 }
 
 type ChannelRepository interface {
-	Create(channel domain.Channel) (domain.Channel, error)
-	Delete(id string) error
-	FindByID(id string) (domain.Channel, error)
-	FindAll() ([]domain.Channel, error)
-	FindByName(name string) (domain.Channel, error)
-	AddMember(channelID string, userID string) error
-	GetMembers(channelID string) ([]domain.User, error)
-	RemoveMember(channelID string, userID string) error
-	IsMember(channelID string, userID string) (bool, error)
+	Create(ctx context.Context, channel domain.Channel) (domain.Channel, error)
+	Delete(ctx context.Context, id string) error
+	FindByID(ctx context.Context, id string) (domain.Channel, error)
+	FindAll(ctx context.Context) ([]domain.Channel, error)
+	FindByName(ctx context.Context, name string) (domain.Channel, error)
+	AddMember(ctx context.Context, channelID string, userID string) error
+	GetMembers(ctx context.Context, channelID string) ([]domain.User, error)
+	RemoveMember(ctx context.Context, channelID string, userID string) error
+	IsMember(ctx context.Context, channelID string, userID string) (bool, error)
 }
 
 type MessageRepository interface {
-	Create(message domain.Message) (domain.Message, error)
-	Delete(id string) error
-	GetByChannelID(channelID string) ([]domain.Message, error)
-	GetByDirectChatID(directChatID string) ([]domain.Message, error)
+	Create(ctx context.Context, message domain.Message) (domain.Message, error)
+	Delete(ctx context.Context, id string) error
+	GetByChannelID(ctx context.Context, channelID string) ([]domain.Message, error)
+	GetByDirectChatID(ctx context.Context, directChatID string) ([]domain.Message, error)
 }
 
 type DirectChatRepository interface {
-	Create(direct domain.DirectChat) (domain.DirectChat, error)
-	Delete(id string) error
-	FindByUsers(user1ID string, user2ID string) (domain.DirectChat, error)
-	FindByUserID(id string) ([]domain.DirectChat, error)
+	Create(ctx context.Context, direct domain.DirectChat) (domain.DirectChat, error)
+	Delete(ctx context.Context, id string) error
+	FindByUsers(ctx context.Context, user1ID string, user2ID string) (domain.DirectChat, error)
+	FindByUserID(ctx context.Context, id string) ([]domain.DirectChat, error)
 }
 
 type Hasher interface {
