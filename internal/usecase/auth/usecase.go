@@ -6,15 +6,18 @@ import (
 
 	"github.com/gofer/internal/domain"
 	"github.com/gofer/internal/usecase"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthUseCase struct {
 	userRepo usecase.UserRepository
+	hasher   usecase.Hasher
 }
 
-func New(userRepo usecase.UserRepository) *AuthUseCase {
-	return &AuthUseCase{userRepo: userRepo}
+func New(userRepo usecase.UserRepository, hasher usecase.Hasher) *AuthUseCase {
+	return &AuthUseCase{
+		userRepo: userRepo,
+		hasher:   hasher,
+	}
 }
 
 func (uc *AuthUseCase) Register(username, password string) (domain.User, error) {
@@ -23,14 +26,14 @@ func (uc *AuthUseCase) Register(username, password string) (domain.User, error) 
 		return domain.User{}, domain.ErrUserAlreadyExists
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := uc.hasher.Hash(password)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("register: hash password: %w", err)
 	}
 
 	user := domain.User{
 		Username:     username,
-		PasswordHash: string(hash),
+		PasswordHash: hash,
 		CreatedAt:    time.Now(),
 	}
 
@@ -48,8 +51,7 @@ func (uc *AuthUseCase) Login(username, password string) (domain.User, error) {
 		return domain.User{}, domain.ErrUserNotFound
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
-	if err != nil {
+	if err = uc.hasher.Compare(user.PasswordHash, password); err != nil {
 		return domain.User{}, domain.ErrInvalidCredentials
 	}
 

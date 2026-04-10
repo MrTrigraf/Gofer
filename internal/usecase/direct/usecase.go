@@ -1,6 +1,7 @@
 package direct
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,6 +27,10 @@ func (uc *DirectUseCase) StartDM(user1ID, user2ID string) (domain.DirectChat, er
 	_, err := uc.directRepo.FindByUsers(user1ID, user2ID)
 	if err == nil {
 		return domain.DirectChat{}, domain.ErrDirectChatAlreadyExists
+	}
+
+	if !errors.Is(err, domain.ErrNotFound) {
+		return domain.DirectChat{}, fmt.Errorf("start dm: check existing: %w", err)
 	}
 
 	_, err = uc.userRepo.FindByID(user1ID)

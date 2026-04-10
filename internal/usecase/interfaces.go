@@ -18,6 +18,7 @@ type ChannelRepository interface {
 	AddMember(channelID string, userID string) error
 	GetMembers(channelID string) ([]domain.User, error)
 	RemoveMember(channelID string, userID string) error
+	IsMember(channelID string, userID string) (bool, error)
 }
 
 type MessageRepository interface {
@@ -32,4 +33,9 @@ type DirectChatRepository interface {
 	Delete(id string) error
 	FindByUsers(user1ID string, user2ID string) (domain.DirectChat, error)
 	FindByUserID(id string) ([]domain.DirectChat, error)
+}
+
+type Hasher interface {
+	Hash(password string) (string, error)
+	Compare(hash, password string) error
 }

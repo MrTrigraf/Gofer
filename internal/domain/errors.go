@@ -18,4 +18,6 @@ var (
 	ErrNotMember               = errors.New("not member")
 	ErrTokenExpired            = errors.New("token expired")
 	ErrTokenInvalid            = errors.New("token invalid")
+	ErrCannotDMYourself        = errors.New("cannot start DM with yourself")
+	ErrNotFound                = errors.New("not found")
 )
