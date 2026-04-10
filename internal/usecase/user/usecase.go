@@ -1,6 +1,7 @@
 package user
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gofer/internal/domain"
@@ -15,8 +16,8 @@ func New(userRepo usecase.UserRepository) *UserUseCase {
 	return &UserUseCase{userRepo: userRepo}
 }
 
-func (uc *UserUseCase) GetProfile(id string) (domain.User, error) {
-	user, err := uc.userRepo.FindByID(id)
+func (uc *UserUseCase) GetProfile(ctx context.Context, id string) (domain.User, error) {
+	user, err := uc.userRepo.FindByID(ctx, id)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("get profile: %w", err)
 	}
@@ -24,8 +25,8 @@ func (uc *UserUseCase) GetProfile(id string) (domain.User, error) {
 	return user, nil
 }
 
-func (uc *UserUseCase) SearchUsers(username string) ([]domain.User, error) {
-	users, err := uc.userRepo.SearchByUsername(username)
+func (uc *UserUseCase) SearchUsers(ctx context.Context, username string) ([]domain.User, error) {
+	users, err := uc.userRepo.SearchByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("search users: %w", err)
 	}

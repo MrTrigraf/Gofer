@@ -1,6 +1,7 @@
 package direct
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -23,8 +24,8 @@ func New(userRepo usecase.UserRepository, directRepo usecase.DirectChatRepositor
 	}
 }
 
-func (uc *DirectUseCase) StartDM(user1ID, user2ID string) (domain.DirectChat, error) {
-	_, err := uc.directRepo.FindByUsers(user1ID, user2ID)
+func (uc *DirectUseCase) StartDM(ctx context.Context, user1ID, user2ID string) (domain.DirectChat, error) {
+	_, err := uc.directRepo.FindByUsers(ctx, user1ID, user2ID)
 	if err == nil {
 		return domain.DirectChat{}, domain.ErrDirectChatAlreadyExists
 	}
@@ -33,12 +34,12 @@ func (uc *DirectUseCase) StartDM(user1ID, user2ID string) (domain.DirectChat, er
 		return domain.DirectChat{}, fmt.Errorf("start dm: check existing: %w", err)
 	}
 
-	_, err = uc.userRepo.FindByID(user1ID)
+	_, err = uc.userRepo.FindByID(ctx, user1ID)
 	if err != nil {
 		return domain.DirectChat{}, domain.ErrUserNotFound
 	}
 
-	_, err = uc.userRepo.FindByID(user2ID)
+	_, err = uc.userRepo.FindByID(ctx, user2ID)
 	if err != nil {
 		return domain.DirectChat{}, domain.ErrUserNotFound
 	}
@@ -49,7 +50,7 @@ func (uc *DirectUseCase) StartDM(user1ID, user2ID string) (domain.DirectChat, er
 		CreatedAt: time.Now(),
 	}
 
-	direct, err = uc.directRepo.Create(direct)
+	direct, err = uc.directRepo.Create(ctx, direct)
 	if err != nil {
 		return domain.DirectChat{}, fmt.Errorf("start dm: %w", err)
 	}
@@ -57,8 +58,8 @@ func (uc *DirectUseCase) StartDM(user1ID, user2ID string) (domain.DirectChat, er
 	return direct, nil
 }
 
-func (uc *DirectUseCase) DeleteDM(id string) error {
-	err := uc.directRepo.Delete(id)
+func (uc *DirectUseCase) DeleteDM(ctx context.Context, id string) error {
+	err := uc.directRepo.Delete(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete direct: %w", err)
 	}
@@ -66,8 +67,8 @@ func (uc *DirectUseCase) DeleteDM(id string) error {
 	return nil
 }
 
-func (uc *DirectUseCase) GetDMHistory(directChatID string) ([]domain.Message, error) {
-	messages, err := uc.messageRepo.GetByDirectChatID(directChatID)
+func (uc *DirectUseCase) GetDMHistory(ctx context.Context, directChatID string) ([]domain.Message, error) {
+	messages, err := uc.messageRepo.GetByDirectChatID(ctx, directChatID)
 	if err != nil {
 		return nil, fmt.Errorf("list direct: %w", err)
 	}
