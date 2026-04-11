@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/pkg/jwt"
 )
 
 type UserRepository interface {
@@ -42,4 +43,10 @@ type DirectChatRepository interface {
 type Hasher interface {
 	Hash(password string) (string, error)
 	Compare(hash, password string) error
+}
+
+type TokenService interface {
+	GenerateTokens(userID, username string) (jwt.TokenPair, error)
+	ParseAccessToken(tokenString string) (*jwt.AccessClaims, error)
+	ParseRefreshToken(tokenString string) (*jwt.RefreshClaims, error)
 }
