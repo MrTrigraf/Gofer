@@ -28,6 +28,7 @@ type DatabaseConfig struct {
 
 type JWTConfig struct {
 	Secret     string `env:"JWT_SECRET"`
+	Refresh    string `env:"JWT_REFRESH"`
 	AccessTTL  string `yaml:"access_ttl" env:"JWT_ACCESS_TTL"`
 	RefreshTTL string `yaml:"refresh_ttl" env:"JWT_REFRESH_TTL"`
 }
