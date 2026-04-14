@@ -1,0 +1,106 @@
+package http
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/gofer/internal/delivery/http/middleware"
+	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/usecase/channel"
+	"github.com/gofer/pkg/httputil"
+)
+
+type CreateChannelRequest struct {
+	Name string `json:"name"`
+}
+
+type ChannelResponse struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedBy string    `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type ChannelHandler struct {
+	channelUC *channel.ChannelUseCase
+}
+
+func NewChannelHandler(channelUC *channel.ChannelUseCase) *ChannelHandler {
+	return &ChannelHandler{channelUC: channelUC}
+}
+
+func (h *ChannelHandler) List(w http.ResponseWriter, r *http.Request) {
+	channels, err := h.channelUC.ListChannels(r.Context())
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(channels)
+}
+
+func (h *ChannelHandler) Create(w http.ResponseWriter, r *http.Request) {
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
+
+	var req CreateChannelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	ch, err := h.channelUC.CreateChannel(r.Context(), req.Name, userCtx.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrChannelAlreadyExists) {
+			httputil.WriteError(w, http.StatusConflict, "channel already exists")
+			return
+		}
+		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(ChannelResponse{
+		ID:        ch.ID,
+		Name:      ch.Name,
+		CreatedBy: ch.CreatedBy,
+		CreatedAt: ch.CreatedAt,
+	})
+}
+
+func (h *ChannelHandler) Join(w http.ResponseWriter, r *http.Request) {
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
+	channelID := r.PathValue("id")
+
+	err := h.channelUC.JoinChannel(r.Context(), channelID, userCtx.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrGroupNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+		if errors.Is(err, domain.ErrUserNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *ChannelHandler) History(w http.ResponseWriter, r *http.Request) {
+	channelID := r.PathValue("id")
+
+	messages, err := h.channelUC.GetChannelHistory(r.Context(), channelID)
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(messages)
+}
