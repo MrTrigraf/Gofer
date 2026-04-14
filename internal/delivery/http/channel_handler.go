@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/gofer/internal/delivery/http/middleware"
 	"github.com/gofer/internal/domain"
@@ -14,13 +13,6 @@ import (
 
 type CreateChannelRequest struct {
 	Name string `json:"name"`
-}
-
-type ChannelResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedBy string    `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 type ChannelHandler struct {
@@ -63,12 +55,7 @@ func (h *ChannelHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(ChannelResponse{
-		ID:        ch.ID,
-		Name:      ch.Name,
-		CreatedBy: ch.CreatedBy,
-		CreatedAt: ch.CreatedAt,
-	})
+	json.NewEncoder(w).Encode(ch)
 }
 
 func (h *ChannelHandler) Join(w http.ResponseWriter, r *http.Request) {
