@@ -75,3 +75,11 @@ func (uc *DirectUseCase) GetDMHistory(ctx context.Context, directChatID string) 
 
 	return messages, nil
 }
+
+func (uc *DirectUseCase) ListDMs(ctx context.Context, userID string) ([]domain.DirectChat, error) {
+	directs, err := uc.directRepo.FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list dms: %w", err)
+	}
+	return directs, nil
+}
