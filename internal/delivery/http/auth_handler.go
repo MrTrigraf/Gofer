@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/gofer/internal/domain"
 	"github.com/gofer/internal/usecase/auth"
@@ -14,12 +13,6 @@ import (
 type RegisterRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-}
-
-type UserResponse struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 type LoginRequest struct {
@@ -58,11 +51,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(UserResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		CreatedAt: user.CreatedAt,
-	})
+	json.NewEncoder(w).Encode(user)
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
