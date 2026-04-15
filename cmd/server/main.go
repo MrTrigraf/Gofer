@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,7 +23,11 @@ func main() {
 
 	router, hub := httpdelivery.NewRouter(pool, cfg)
 	go hub.Run()
-	runServer(router, cfg.Server.Port)
+
+	if err := runServer(router, cfg.Server.Port); err != nil {
+		slog.Error("server failed", "err", err)
+		os.Exit(1)
+	}
 }
 
 func mustLoadConfig() *config.Config {
@@ -43,29 +48,43 @@ func mustConnectDB(cfg *config.Config) *pgxpool.Pool {
 	return pool
 }
 
-func runServer(handler http.Handler, port string) {
+func startServer(server *http.Server) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+	return errCh
+}
+
+func waitSignal() <-chan os.Signal {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	return quit
+}
+
+func runServer(handler http.Handler, port string) error {
 	server := &http.Server{
 		Addr:    ":" + port,
 		Handler: handler,
 	}
 
-	go func() {
-		slog.Info("server started", "port", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "err", err)
-			os.Exit(1)
-		}
-	}()
+	errCh := startServer(server)
+	slog.Info("server started", "port", port)
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("server error: %w", err)
+	case <-waitSignal():
+	}
 
 	slog.Info("shutting down server...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	if err := server.Shutdown(ctx); err != nil {
-		slog.Error("shutdown error", "err", err)
+		return fmt.Errorf("shutdown error: %w", err)
 	}
+
 	slog.Info("server stopped")
+	return nil
 }
