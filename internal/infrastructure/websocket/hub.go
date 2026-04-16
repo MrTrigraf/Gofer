@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/gofer/internal/domain"
 	"github.com/gofer/internal/usecase"
 )
 
@@ -14,25 +15,28 @@ type Hub struct {
 	register    chan *Client
 	unregister  chan *Client
 	channelRepo usecase.ChannelRepository
+	messageRepo usecase.MessageRepository
 }
 
 type WSMessage struct {
-	Type       string    `json:"type"`
-	TargetType string    `json:"target_type"`
-	TargetID   string    `json:"target_id"`
-	Content    string    `json:"content"`
-	SenderID   string    `json:"sender_id"`
-	Username   string    `json:"username"`
-	CreatedAt  time.Time `json:"created_at"`
+	Type        string    `json:"type"`
+	TargetType  string    `json:"target_type"`
+	TargetID    string    `json:"target_id"`
+	RecipientID string    `json:"recipient_id"`
+	Content     string    `json:"content"`
+	SenderID    string    `json:"sender_id"`
+	Username    string    `json:"username"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
-func NewHub(channelRepo usecase.ChannelRepository) *Hub {
+func NewHub(channelRepo usecase.ChannelRepository, messageRepo usecase.MessageRepository) *Hub {
 	return &Hub{
 		clients:     make(map[string]*Client),
 		broadcast:   make(chan IncomingMessage, 256),
 		register:    make(chan *Client),
 		unregister:  make(chan *Client),
 		channelRepo: channelRepo,
+		messageRepo: messageRepo,
 	}
 }
 
@@ -56,6 +60,16 @@ func (h *Hub) Run() {
 
 			switch wsMsg.Type {
 			case "channel_message":
+				message := domain.Message{
+					UserID:    msg.client.userID,
+					Content:   wsMsg.Content,
+					ChannelID: &wsMsg.TargetID,
+					CreatedAt: time.Now(),
+				}
+				_, err := h.messageRepo.Create(context.Background(), message)
+				if err != nil {
+					continue
+				}
 				members, err := h.channelRepo.GetMembers(context.Background(), wsMsg.TargetID)
 				if err != nil {
 					continue
@@ -68,7 +82,19 @@ func (h *Hub) Run() {
 				}
 
 			case "dm_message":
-				recipient, online := h.clients[wsMsg.TargetID]
+				message := domain.Message{
+					UserID:       msg.client.userID,
+					Content:      wsMsg.Content,
+					DirectChatID: &wsMsg.TargetID,
+					CreatedAt:    time.Now(),
+				}
+
+				_, err := h.messageRepo.Create(context.Background(), message)
+				if err != nil {
+					continue
+				}
+
+				recipient, online := h.clients[wsMsg.RecipientID]
 				if online {
 					recipient.send <- msg.data
 				}
