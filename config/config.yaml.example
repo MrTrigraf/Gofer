@@ -15,7 +15,7 @@ database:
   health_check_period: "1m"
 
 jwt:
-  secret: "sbeuKomar"
-  refresh: "sbeuShmel"
+  secret: "your-secret-key"
+  refresh: "your-refresh-key"
   access_ttl: "15m"
   refresh_ttl: "168h"

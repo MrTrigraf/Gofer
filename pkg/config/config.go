@@ -1,6 +1,11 @@
 package config
 
-import "github.com/ilyakaznacheev/cleanenv"
+import (
+	"fmt"
+	"os"
+
+	"github.com/goccy/go-yaml"
+)
 
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
@@ -9,32 +14,43 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port string `yaml:"port" env:"SERVER_PORT"`
+	Port string `yaml:"port"`
 }
 
 type DatabaseConfig struct {
-	Host              string `yaml:"host" env:"DB_HOST"`
-	Port              string `yaml:"port" env:"DB_PORT"`
-	User              string `yaml:"user" env:"DB_USER"`
-	Password          string `yaml:"password" env:"DB_PASSWORD"`
-	Name              string `yaml:"name" env:"DB_NAME"`
-	SSLMode           string `yaml:"sslmode" env:"DB_SSLMODE" env-default:"disable"`
-	MaxConns          int32  `yaml:"max_conns" env:"DB_MAX_CONNS" env-default:"25"`
-	MinConns          int32  `yaml:"min_conns" env:"DB_MIN_CONNS" env-default:"5"`
-	MaxConnLifetime   string `yaml:"max_conn_lifetime" env:"DB_MAX_CONN_LIFETIME" env-default:"5m"`
-	MaxConnIdleTime   string `yaml:"max_conn_idle_time" env:"DB_MAX_CONN_IDLE_TIME" env-default:"2m"`
-	HealthCheckPeriod string `yaml:"health_check_period" env:"DB_HEALTH_CHECK_PERIOD" env-default:"1m"`
+	Host              string `yaml:"host"`
+	Port              string `yaml:"port"`
+	User              string `yaml:"user"`
+	Password          string `yaml:"password"`
+	Name              string `yaml:"name"`
+	SSLMode           string `yaml:"sslmode"`
+	MaxConns          int32  `yaml:"max_conns"`
+	MinConns          int32  `yaml:"min_conns"`
+	MaxConnLifetime   string `yaml:"max_conn_lifetime"`
+	MaxConnIdleTime   string `yaml:"max_conn_idle_time"`
+	HealthCheckPeriod string `yaml:"health_check_period"`
 }
 
 type JWTConfig struct {
-	Secret     string `env:"JWT_SECRET"`
-	Refresh    string `env:"JWT_REFRESH"`
-	AccessTTL  string `yaml:"access_ttl" env:"JWT_ACCESS_TTL"`
-	RefreshTTL string `yaml:"refresh_ttl" env:"JWT_REFRESH_TTL"`
+	Secret     string `yaml:"secret"`
+	Refresh    string `yaml:"refresh"`
+	AccessTTL  string `yaml:"access_ttl"`
+	RefreshTTL string `yaml:"refresh_ttl"`
 }
 
 func Load() (*Config, error) {
+	file, err := os.Open("config/config.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("open config: %w", err)
+	}
+	defer file.Close()
+
 	var cfg Config
-	err := cleanenv.ReadConfig("config/config.yaml", &cfg)
-	return &cfg, err
+	decoder := yaml.NewDecoder(file)
+
+	if err = decoder.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
+
+	return &cfg, nil
 }
