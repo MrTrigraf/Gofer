@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gofer/internal/delivery/http/middleware"
 	"github.com/gofer/internal/domain"
@@ -45,7 +47,20 @@ func (h *DirectHandler) Start(w http.ResponseWriter, r *http.Request) {
 func (h *DirectHandler) History(w http.ResponseWriter, r *http.Request) {
 	directID := r.PathValue("id")
 
-	messages, err := h.directUC.GetDMHistory(r.Context(), directID)
+	limitStr := r.URL.Query().Get("limit")
+	beforeStr := r.URL.Query().Get("before")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 50
+	}
+
+	before, err := time.Parse(time.RFC3339, beforeStr)
+	if err != nil {
+		before = time.Now() // если не передали — берём текущее время
+	}
+
+	messages, err := h.directUC.GetDMHistory(r.Context(), directID, limit, before)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return

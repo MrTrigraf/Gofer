@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gofer/internal/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,13 +46,18 @@ func (r *MessageRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *MessageRepo) GetByChannelID(ctx context.Context, channelID string) ([]domain.Message, error) {
+func (r *MessageRepo) GetByChannelID(ctx context.Context, channelID string, limit int, before time.Time) ([]domain.Message, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, user_id, content, channel_id, direct_chat_id, created_at
-		FROM messages
-		WHERE channel_id = $1
-		ORDER BY created_at ASC
-	`, channelID)
+		SELECT * FROM (
+    		SELECT id, user_id, content, channel_id, direct_chat_id, created_at
+    		FROM messages
+    		WHERE channel_id = $1
+      			AND created_at < $2
+    	ORDER BY created_at DESC
+    	LIMIT $3
+	) sub
+	ORDER BY created_at ASC
+	`, channelID, before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get messages by channel: %w", err)
 	}
@@ -82,13 +88,18 @@ func (r *MessageRepo) GetByChannelID(ctx context.Context, channelID string) ([]d
 	return messages, nil
 }
 
-func (r *MessageRepo) GetByDirectChatID(ctx context.Context, directChatID string) ([]domain.Message, error) {
+func (r *MessageRepo) GetByDirectChatID(ctx context.Context, directChatID string, limit int, before time.Time) ([]domain.Message, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, user_id, content, channel_id, direct_chat_id, created_at
-		FROM messages
-		WHERE direct_chat_id = $1
-		ORDER BY created_at ASC
-	`, directChatID)
+		SELECT * FROM (
+    		SELECT id, user_id, content, channel_id, direct_chat_id, created_at
+    		FROM messages
+    		WHERE direct_chat_id = $1
+      			AND created_at < $2
+    	ORDER BY created_at DESC
+    	LIMIT $3
+	) sub
+	ORDER BY created_at ASC
+	`, directChatID, before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get messages by direct chat: %w", err)
 	}

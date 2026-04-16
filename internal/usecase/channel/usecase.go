@@ -103,8 +103,8 @@ func (uc *ChannelUseCase) DeleteChannel(ctx context.Context, id string) error {
 	return nil
 }
 
-func (uc *ChannelUseCase) GetChannelHistory(ctx context.Context, channelID string) ([]domain.Message, error) {
-	messages, err := uc.messageRepo.GetByChannelID(ctx, channelID)
+func (uc *ChannelUseCase) GetChannelHistory(ctx context.Context, channelID string, limit int, before time.Time) ([]domain.Message, error) {
+	messages, err := uc.messageRepo.GetByChannelID(ctx, channelID, limit, before)
 	if err != nil {
 		return nil, fmt.Errorf("get channel history: %w", err)
 	}
