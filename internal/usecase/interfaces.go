@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"github.com/gofer/internal/domain"
 	"github.com/gofer/pkg/jwt"
@@ -29,8 +30,8 @@ type ChannelRepository interface {
 type MessageRepository interface {
 	Create(ctx context.Context, message domain.Message) (domain.Message, error)
 	Delete(ctx context.Context, id string) error
-	GetByChannelID(ctx context.Context, channelID string) ([]domain.Message, error)
-	GetByDirectChatID(ctx context.Context, directChatID string) ([]domain.Message, error)
+	GetByChannelID(ctx context.Context, channelID string, limit int, before time.Time) ([]domain.Message, error)
+	GetByDirectChatID(ctx context.Context, directChatID string, limit int, before time.Time) ([]domain.Message, error)
 }
 
 type DirectChatRepository interface {

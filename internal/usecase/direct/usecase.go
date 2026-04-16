@@ -67,8 +67,8 @@ func (uc *DirectUseCase) DeleteDM(ctx context.Context, id string) error {
 	return nil
 }
 
-func (uc *DirectUseCase) GetDMHistory(ctx context.Context, directChatID string) ([]domain.Message, error) {
-	messages, err := uc.messageRepo.GetByDirectChatID(ctx, directChatID)
+func (uc *DirectUseCase) GetDMHistory(ctx context.Context, directChatID string, limit int, before time.Time) ([]domain.Message, error) {
+	messages, err := uc.messageRepo.GetByDirectChatID(ctx, directChatID, limit, before)
 	if err != nil {
 		return nil, fmt.Errorf("list direct: %w", err)
 	}

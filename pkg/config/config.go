@@ -47,8 +47,8 @@ func Load() (*Config, error) {
 
 	var cfg Config
 	decoder := yaml.NewDecoder(file)
-
-	if err = decoder.Decode(&cfg); err != nil {
+	err = decoder.Decode(&cfg)
+	if err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
