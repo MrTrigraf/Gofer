@@ -18,19 +18,37 @@ func NewChannelRepo(db *pgxpool.Pool) *ChannelRepo {
 	return &ChannelRepo{db: db}
 }
 
-func (r *ChannelRepo) Create(ctx context.Context, channel domain.Channel) (domain.Channel, error) {
-	err := r.db.QueryRow(ctx, `
-        INSERT INTO channels (channel_name, created_by, created_at)
-        VALUES ($1, $2, $3)
-        RETURNING id, channel_name, created_by, created_at
-    `, channel.Name, channel.CreatedBy, channel.CreatedAt).Scan(
+func (r *ChannelRepo) CreateWithMember(ctx context.Context, channel domain.Channel, userID string) (domain.Channel, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return domain.Channel{}, fmt.Errorf("create with member: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	err = tx.QueryRow(ctx, `
+		INSERT INTO channels (channel_name, created_by, created_at)
+		VALUES ($1, $2, $3)
+		RETURNING id, channel_name, created_by, created_at
+	`, channel.Name, channel.CreatedBy, channel.CreatedAt).Scan(
 		&channel.ID,
 		&channel.Name,
 		&channel.CreatedBy,
 		&channel.CreatedAt,
 	)
 	if err != nil {
-		return domain.Channel{}, fmt.Errorf("create channel: %w", err)
+		return domain.Channel{}, fmt.Errorf("create with member: insert channel: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO channel_members (channel_id, user_id)
+		VALUES ($1, $2)
+	`, channel.ID, userID)
+	if err != nil {
+		return domain.Channel{}, fmt.Errorf("create with member: add member: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Channel{}, fmt.Errorf("create with member: commit: %w", err)
 	}
 
 	return channel, nil
@@ -68,13 +86,16 @@ func (r *ChannelRepo) FindByID(ctx context.Context, id string) (domain.Channel, 
 	return channel, nil
 }
 
-func (r *ChannelRepo) FindAll(ctx context.Context) ([]domain.Channel, error) {
+func (r *ChannelRepo) FindByUserID(ctx context.Context, userID string) ([]domain.Channel, error) {
 	rows, err := r.db.Query(ctx, `
-	SELECT id, channel_name, created_by, created_at 
-	FROM channels
-	`)
+		SELECT c.id, c.channel_name, c.created_by, c.created_at
+		FROM channels c
+		JOIN channel_members cm ON cm.channel_id = c.id
+		WHERE cm.user_id = $1
+		ORDER BY c.created_at DESC
+	`, userID)
 	if err != nil {
-		return nil, fmt.Errorf("find all channels: %w", err)
+		return nil, fmt.Errorf("find channels by user: %w", err)
 	}
 	defer rows.Close()
 
@@ -84,13 +105,13 @@ func (r *ChannelRepo) FindAll(ctx context.Context) ([]domain.Channel, error) {
 		var channel domain.Channel
 		err := rows.Scan(&channel.ID, &channel.Name, &channel.CreatedBy, &channel.CreatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("find all channels: scan: %w", err)
+			return nil, fmt.Errorf("find channels by user: scan: %w", err)
 		}
 		channels = append(channels, channel)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("find all channels: %w", err)
+		return nil, fmt.Errorf("find channels by user: rows: %w", err)
 	}
 
 	return channels, nil

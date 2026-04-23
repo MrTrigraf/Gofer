@@ -26,6 +26,17 @@ func New(userRepo usecase.UserRepository, hasher usecase.Hasher, tokenService us
 }
 
 func (uc *AuthUseCase) Register(ctx context.Context, username, password string) (domain.User, error) {
+	if len(username) == 0 || len(username) > 16 {
+		return domain.User{}, domain.ErrUsernameIsLong
+	}
+
+	if len(password) < 6 {
+		return domain.User{}, domain.ErrPasswordTooShort
+	}
+	if len(password) > 64 {
+		return domain.User{}, domain.ErrPasswordTooLong
+	}
+
 	_, err := uc.userRepo.FindByUsername(ctx, username)
 	if err == nil {
 		return domain.User{}, domain.ErrUserAlreadyExists
@@ -54,17 +65,22 @@ func (uc *AuthUseCase) Register(ctx context.Context, username, password string) 
 	return created, nil
 }
 
-func (uc *AuthUseCase) Login(ctx context.Context, username, password string) (jwt.TokenPair, error) {
+func (uc *AuthUseCase) Login(ctx context.Context, username, password string) (domain.User, jwt.TokenPair, error) {
 	user, err := uc.userRepo.FindByUsername(ctx, username)
 	if err != nil {
-		return jwt.TokenPair{}, domain.ErrUserNotFound
+		return domain.User{}, jwt.TokenPair{}, domain.ErrUserNotFound
 	}
 
 	if err = uc.hasher.Compare(user.PasswordHash, password); err != nil {
-		return jwt.TokenPair{}, domain.ErrInvalidCredentials
+		return domain.User{}, jwt.TokenPair{}, domain.ErrInvalidCredentials
 	}
 
-	return uc.tokenService.GenerateTokens(user.ID, user.Username)
+	tokens, err := uc.tokenService.GenerateTokens(user.ID, user.Username)
+	if err != nil {
+		return domain.User{}, jwt.TokenPair{}, err
+	}
+
+	return user, tokens, nil
 }
 
 func (uc *AuthUseCase) RefreshToken(ctx context.Context, refreshToken string) (jwt.TokenPair, error) {

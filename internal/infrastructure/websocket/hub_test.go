@@ -18,8 +18,8 @@ type MockMessageRepo struct {
 	mock.Mock
 }
 
-func (m *MockChannelRepo) Create(ctx context.Context, channel domain.Channel) (domain.Channel, error) {
-	args := m.Called(ctx, channel)
+func (m *MockChannelRepo) CreateWithMember(ctx context.Context, channel domain.Channel, userID string) (domain.Channel, error) {
+	args := m.Called(ctx, channel, userID)
 	return args.Get(0).(domain.Channel), args.Error(1)
 }
 
@@ -33,8 +33,8 @@ func (m *MockChannelRepo) FindByID(ctx context.Context, id string) (domain.Chann
 	return args.Get(0).(domain.Channel), args.Error(1)
 }
 
-func (m *MockChannelRepo) FindAll(ctx context.Context) ([]domain.Channel, error) {
-	args := m.Called(ctx)
+func (m *MockChannelRepo) FindByUserID(ctx context.Context, userID string) ([]domain.Channel, error) {
+	args := m.Called(ctx, userID)
 	return args.Get(0).([]domain.Channel), args.Error(1)
 }
 

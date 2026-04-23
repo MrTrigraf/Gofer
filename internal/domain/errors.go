@@ -20,4 +20,6 @@ var (
 	ErrTokenInvalid            = errors.New("token invalid")
 	ErrCannotDMYourself        = errors.New("cannot start DM with yourself")
 	ErrNotFound                = errors.New("not found")
+	ErrPasswordTooShort        = errors.New("password too short")
+	ErrPasswordTooLong         = errors.New("password too long")
 )

@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -33,13 +34,17 @@ func (uc *ChannelUseCase) CreateChannel(ctx context.Context, name string, create
 		return domain.Channel{}, domain.ErrChannelAlreadyExists
 	}
 
+	if !errors.Is(err, domain.ErrNotFound) {
+		return domain.Channel{}, fmt.Errorf("create channel: check name: %w", err)
+	}
+
 	channel := domain.Channel{
 		Name:      name,
 		CreatedBy: createdBy,
 		CreatedAt: time.Now(),
 	}
 
-	created, err := uc.channelRepo.Create(ctx, channel)
+	created, err := uc.channelRepo.CreateWithMember(ctx, channel, createdBy)
 	if err != nil {
 		return domain.Channel{}, fmt.Errorf("create channel: %w", err)
 	}
@@ -85,8 +90,8 @@ func (uc *ChannelUseCase) LeaveChannel(ctx context.Context, channelID string, us
 	return nil
 }
 
-func (uc *ChannelUseCase) ListChannels(ctx context.Context) ([]domain.Channel, error) {
-	channels, err := uc.channelRepo.FindAll(ctx)
+func (uc *ChannelUseCase) ListChannels(ctx context.Context, userID string) ([]domain.Channel, error) {
+	channels, err := uc.channelRepo.FindByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list channels: %w", err)
 	}
