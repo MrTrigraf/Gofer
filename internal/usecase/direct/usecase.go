@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/gofer/internal/usecase"
 )
 
@@ -76,10 +77,10 @@ func (uc *DirectUseCase) GetDMHistory(ctx context.Context, directChatID string, 
 	return messages, nil
 }
 
-func (uc *DirectUseCase) ListDMs(ctx context.Context, userID string) ([]domain.DirectChat, error) {
-	directs, err := uc.directRepo.FindByUserID(ctx, userID)
+func (uc *DirectUseCase) ListDMs(ctx context.Context, userID string) ([]dto.DirectChatResponse, error) {
+	dms, err := uc.directRepo.FindByUserIDWithUsernames(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list dms: %w", err)
 	}
-	return directs, nil
+	return dms, nil
 }

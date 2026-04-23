@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/gofer/pkg/jwt"
 )
 
@@ -16,10 +17,10 @@ type UserRepository interface {
 }
 
 type ChannelRepository interface {
-	Create(ctx context.Context, channel domain.Channel) (domain.Channel, error)
+	CreateWithMember(ctx context.Context, channel domain.Channel, userID string) (domain.Channel, error)
 	Delete(ctx context.Context, id string) error
 	FindByID(ctx context.Context, id string) (domain.Channel, error)
-	FindAll(ctx context.Context) ([]domain.Channel, error)
+	FindByUserID(ctx context.Context, userID string) ([]domain.Channel, error)
 	FindByName(ctx context.Context, name string) (domain.Channel, error)
 	AddMember(ctx context.Context, channelID string, userID string) error
 	GetMembers(ctx context.Context, channelID string) ([]domain.User, error)
@@ -38,7 +39,7 @@ type DirectChatRepository interface {
 	Create(ctx context.Context, direct domain.DirectChat) (domain.DirectChat, error)
 	Delete(ctx context.Context, id string) error
 	FindByUsers(ctx context.Context, user1ID string, user2ID string) (domain.DirectChat, error)
-	FindByUserID(ctx context.Context, id string) ([]domain.DirectChat, error)
+	FindByUserIDWithUsernames(ctx context.Context, userID string) ([]dto.DirectChatResponse, error)
 }
 
 type Hasher interface {

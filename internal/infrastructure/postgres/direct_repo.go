@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -69,36 +70,45 @@ func (r *DirectRepo) FindByUsers(ctx context.Context, user1ID, user2ID string) (
 	return direct, nil
 }
 
-func (r *DirectRepo) FindByUserID(ctx context.Context, id string) ([]domain.DirectChat, error) {
+func (r *DirectRepo) FindByUserIDWithUsernames(ctx context.Context, userID string) ([]dto.DirectChatResponse, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, user1_id, user2_id, created_at
-		FROM direct_chats
-		WHERE user1_id = $1 OR user2_id = $1
-	`, id)
+		SELECT
+			dc.id,
+			CASE WHEN dc.user1_id = $1 THEN dc.user2_id ELSE dc.user1_id END AS other_id,
+			u.user_name,
+			dc.created_at
+		FROM direct_chats dc
+		JOIN users u ON u.id = CASE
+			WHEN dc.user1_id = $1 THEN dc.user2_id
+			ELSE dc.user1_id
+		END
+		WHERE dc.user1_id = $1 OR dc.user2_id = $1
+		ORDER BY dc.created_at DESC
+	`, userID)
 	if err != nil {
-		return nil, fmt.Errorf("find directs by user: %w", err)
+		return nil, fmt.Errorf("find direct chats with usernames: %w", err)
 	}
 	defer rows.Close()
 
-	var directs []domain.DirectChat
+	var result []dto.DirectChatResponse
 
 	for rows.Next() {
-		var direct domain.DirectChat
+		var item dto.DirectChatResponse
 		err := rows.Scan(
-			&direct.ID,
-			&direct.UserID1,
-			&direct.UserID2,
-			&direct.CreatedAt,
+			&item.ID,
+			&item.OtherUserID,
+			&item.OtherUsername,
+			&item.CreatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("find directs by user: scan: %w", err)
+			return nil, fmt.Errorf("find direct chats with usernames: scan: %w", err)
 		}
-		directs = append(directs, direct)
+		result = append(result, item)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("find directs by user: rows: %w", err)
+		return nil, fmt.Errorf("find direct chats with usernames: rows: %w", err)
 	}
 
-	return directs, nil
+	return result, nil
 }

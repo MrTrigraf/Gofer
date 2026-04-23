@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -58,9 +59,9 @@ func (m *MockDirectRepo) FindByUsers(ctx context.Context, user1ID, user2ID strin
 	return args.Get(0).(domain.DirectChat), args.Error(1)
 }
 
-func (m *MockDirectRepo) FindByUserID(ctx context.Context, id string) ([]domain.DirectChat, error) {
-	args := m.Called(ctx, id)
-	return args.Get(0).([]domain.DirectChat), args.Error(1)
+func (m *MockDirectRepo) FindByUserIDWithUsernames(ctx context.Context, userID string) ([]dto.DirectChatResponse, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).([]dto.DirectChatResponse), args.Error(1)
 }
 
 func (m *MockMessageRepo) Create(ctx context.Context, message domain.Message) (domain.Message, error) {
@@ -128,14 +129,16 @@ func TestListDMs_Success(t *testing.T) {
 	messageRepo := &MockMessageRepo{}
 	uc := New(userRepo, directRepo, messageRepo)
 
-	directRepo.On("FindByUserID", mock.Anything, "user-1").
-		Return([]domain.DirectChat{
-			{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"},
-			{ID: "dm-2", UserID1: "user-1", UserID2: "user-3"},
+	directRepo.On("FindByUserIDWithUsernames", mock.Anything, "user-1").
+		Return([]dto.DirectChatResponse{
+			{ID: "dm-1", OtherUserID: "user-2", OtherUsername: "alice"},
+			{ID: "dm-2", OtherUserID: "user-3", OtherUsername: "bob"},
 		}, nil)
 
 	dms, err := uc.ListDMs(context.Background(), "user-1")
 
 	require.NoError(t, err)
 	assert.Len(t, dms, 2)
+	assert.Equal(t, "alice", dms[0].OtherUsername)
+	assert.Equal(t, "bob", dms[1].OtherUsername)
 }

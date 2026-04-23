@@ -26,7 +26,9 @@ func NewChannelHandler(channelUC *channel.ChannelUseCase) *ChannelHandler {
 }
 
 func (h *ChannelHandler) List(w http.ResponseWriter, r *http.Request) {
-	channels, err := h.channelUC.ListChannels(r.Context())
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
+
+	channels, err := h.channelUC.ListChannels(r.Context(), userCtx.UserID)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return

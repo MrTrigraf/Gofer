@@ -59,6 +59,13 @@ func (r *Router) setupRoutes(
 	userHandler *UserHandler,
 	wsHandler *websocket.Handler,
 ) {
+	// пинга сервера на статус живн-нет
+	r.mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
 	// публичные маршруты
 	r.mux.HandleFunc("POST /api/v1/auth/register", authHandler.Register)
 	r.mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)

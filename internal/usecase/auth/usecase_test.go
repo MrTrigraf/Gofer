@@ -120,7 +120,7 @@ func TestLogin_Success(t *testing.T) {
 	tokenSvc.On("GenerateTokens", "123", "lol").
 		Return(jwt.TokenPair{AccessToken: "access", RefreshToken: "refresh"}, nil)
 
-	tokens, err := uc.Login(context.Background(), "lol", "secret123")
+	_, tokens, err := uc.Login(context.Background(), "lol", "secret123")
 
 	require.NoError(t, err)
 	assert.Equal(t, "access", tokens.AccessToken)
@@ -139,7 +139,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 	hasher.On("Compare", "hashed", "error123").
 		Return(errors.New("wrong password"))
 
-	_, err := uc.Login(context.Background(), "lol", "error123")
+	_, _, err := uc.Login(context.Background(), "lol", "error123")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrInvalidCredentials)

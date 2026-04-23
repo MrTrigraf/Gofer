@@ -40,8 +40,8 @@ func (m *MockUserRepo) SearchByUsername(ctx context.Context, query string) ([]do
 	return args.Get(0).([]domain.User), args.Error(1)
 }
 
-func (m *MockChannelRepo) Create(ctx context.Context, channel domain.Channel) (domain.Channel, error) {
-	args := m.Called(ctx, channel)
+func (m *MockChannelRepo) CreateWithMember(ctx context.Context, channel domain.Channel, userID string) (domain.Channel, error) {
+	args := m.Called(ctx, channel, userID)
 	return args.Get(0).(domain.Channel), args.Error(1)
 }
 
@@ -55,8 +55,8 @@ func (m *MockChannelRepo) FindByID(ctx context.Context, id string) (domain.Chann
 	return args.Get(0).(domain.Channel), args.Error(1)
 }
 
-func (m *MockChannelRepo) FindAll(ctx context.Context) ([]domain.Channel, error) {
-	args := m.Called(ctx)
+func (m *MockChannelRepo) FindByUserID(ctx context.Context, userID string) ([]domain.Channel, error) {
+	args := m.Called(ctx, userID)
 	return args.Get(0).([]domain.Channel), args.Error(1)
 }
 
@@ -114,7 +114,7 @@ func TestCreateChannel_Success(t *testing.T) {
 	channelRepo.On("FindByName", mock.Anything, "general").
 		Return(domain.Channel{}, domain.ErrNotFound)
 
-	channelRepo.On("Create", mock.Anything, mock.AnythingOfType("domain.Channel")).
+	channelRepo.On("CreateWithMember", mock.Anything, mock.AnythingOfType("domain.Channel"), "user-1").
 		Return(domain.Channel{ID: "ch-1", Name: "general"}, nil)
 
 	ch, err := uc.CreateChannel(context.Background(), "general", "user-1")
@@ -165,13 +165,13 @@ func TestListChannels_Success(t *testing.T) {
 	messageRepo := &MockMessageRepo{}
 	uc := New(userRepo, channelRepo, messageRepo)
 
-	channelRepo.On("FindAll", mock.Anything).
+	channelRepo.On("FindByUserID", mock.Anything, "user-1").
 		Return([]domain.Channel{
 			{ID: "ch-1", Name: "general"},
 			{ID: "ch-2", Name: "random"},
 		}, nil)
 
-	channels, err := uc.ListChannels(context.Background())
+	channels, err := uc.ListChannels(context.Background(), "user-1")
 
 	require.NoError(t, err)
 	assert.Len(t, channels, 2)
