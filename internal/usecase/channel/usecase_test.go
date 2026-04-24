@@ -176,3 +176,53 @@ func TestListChannels_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, channels, 2)
 }
+
+func TestDeleteChannel_Success(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	channelRepo.On("FindByID", mock.Anything, "ch-1").
+		Return(domain.Channel{ID: "ch-1", CreatedBy: "user-1"}, nil)
+
+	channelRepo.On("Delete", mock.Anything, "ch-1").
+		Return(nil)
+
+	err := uc.DeleteChannel(context.Background(), "ch-1", "user-1")
+
+	require.NoError(t, err)
+	channelRepo.AssertCalled(t, "Delete", mock.Anything, "ch-1")
+}
+
+func TestDeleteChannel_NotCreator(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	channelRepo.On("FindByID", mock.Anything, "ch-1").
+		Return(domain.Channel{ID: "ch-1", CreatedBy: "user-1"}, nil)
+
+	err := uc.DeleteChannel(context.Background(), "ch-1", "user-2")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrForbidden)
+	channelRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+}
+
+func TestDeleteChannel_NotFound(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	channelRepo.On("FindByID", mock.Anything, "ch-missing").
+		Return(domain.Channel{}, domain.ErrNotFound)
+
+	err := uc.DeleteChannel(context.Background(), "ch-missing", "user-1")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrGroupNotFound)
+	channelRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+}

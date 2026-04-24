@@ -99,9 +99,17 @@ func (uc *ChannelUseCase) ListChannels(ctx context.Context, userID string) ([]do
 	return channels, nil
 }
 
-func (uc *ChannelUseCase) DeleteChannel(ctx context.Context, id string) error {
-	err := uc.channelRepo.Delete(ctx, id)
+func (uc *ChannelUseCase) DeleteChannel(ctx context.Context, channelID, userID string) error {
+	channel, err := uc.channelRepo.FindByID(ctx, channelID)
 	if err != nil {
+		return domain.ErrGroupNotFound
+	}
+
+	if channel.CreatedBy != userID {
+		return domain.ErrForbidden
+	}
+
+	if err := uc.channelRepo.Delete(ctx, channelID); err != nil {
 		return fmt.Errorf("delete channel: %w", err)
 	}
 
