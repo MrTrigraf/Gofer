@@ -59,6 +59,11 @@ func (m *MockDirectRepo) FindByUsers(ctx context.Context, user1ID, user2ID strin
 	return args.Get(0).(domain.DirectChat), args.Error(1)
 }
 
+func (m *MockDirectRepo) FindByID(ctx context.Context, id string) (domain.DirectChat, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(domain.DirectChat), args.Error(1)
+}
+
 func (m *MockDirectRepo) FindByUserIDWithUsernames(ctx context.Context, userID string) ([]dto.DirectChatResponse, error) {
 	args := m.Called(ctx, userID)
 	return args.Get(0).([]dto.DirectChatResponse), args.Error(1)
@@ -141,4 +146,54 @@ func TestListDMs_Success(t *testing.T) {
 	assert.Len(t, dms, 2)
 	assert.Equal(t, "alice", dms[0].OtherUsername)
 	assert.Equal(t, "bob", dms[1].OtherUsername)
+}
+
+func TestDeleteDM_Success(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, directRepo, messageRepo)
+
+	directRepo.On("FindByID", mock.Anything, "dm-1").
+		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
+
+	directRepo.On("Delete", mock.Anything, "dm-1").
+		Return(nil)
+
+	err := uc.DeleteDM(context.Background(), "dm-1", "user-1")
+
+	require.NoError(t, err)
+	directRepo.AssertCalled(t, "Delete", mock.Anything, "dm-1")
+}
+
+func TestDeleteDM_NotParticipant(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, directRepo, messageRepo)
+
+	directRepo.On("FindByID", mock.Anything, "dm-1").
+		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
+
+	err := uc.DeleteDM(context.Background(), "dm-1", "user-3")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrForbidden)
+	directRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+}
+
+func TestDeleteDM_NotFound(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, directRepo, messageRepo)
+
+	directRepo.On("FindByID", mock.Anything, "dm-missing").
+		Return(domain.DirectChat{}, domain.ErrNotFound)
+
+	err := uc.DeleteDM(context.Background(), "dm-missing", "user-1")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrDirectChatNotFound)
+	directRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
 }

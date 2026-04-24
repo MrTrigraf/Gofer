@@ -108,3 +108,45 @@ func (h *ChannelHandler) History(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(messages)
 }
+
+func (h *ChannelHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
+	channelID := r.PathValue("id")
+
+	err := h.channelUC.DeleteChannel(r.Context(), channelID, userCtx.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrGroupNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+		if errors.Is(err, domain.ErrForbidden) {
+			httputil.WriteError(w, http.StatusForbidden, "only creator can delete channel")
+			return
+		}
+		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ChannelHandler) Leave(w http.ResponseWriter, r *http.Request) {
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
+	channelID := r.PathValue("id")
+
+	err := h.channelUC.LeaveChannel(r.Context(), channelID, userCtx.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrGroupNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+		if errors.Is(err, domain.ErrUserNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

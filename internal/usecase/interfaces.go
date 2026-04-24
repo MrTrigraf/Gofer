@@ -38,6 +38,7 @@ type MessageRepository interface {
 type DirectChatRepository interface {
 	Create(ctx context.Context, direct domain.DirectChat) (domain.DirectChat, error)
 	Delete(ctx context.Context, id string) error
+	FindByID(ctx context.Context, id string) (domain.DirectChat, error)
 	FindByUsers(ctx context.Context, user1ID string, user2ID string) (domain.DirectChat, error)
 	FindByUserIDWithUsernames(ctx context.Context, userID string) ([]dto.DirectChatResponse, error)
 }

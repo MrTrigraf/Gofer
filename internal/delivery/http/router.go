@@ -75,10 +75,13 @@ func (r *Router) setupRoutes(
 	r.mux.HandleFunc("GET /api/v1/channels", jwtMW.Handle(channelHandler.List))
 	r.mux.HandleFunc("POST /api/v1/channels", jwtMW.Handle(channelHandler.Create))
 	r.mux.HandleFunc("POST /api/v1/channels/{id}/join", jwtMW.Handle(channelHandler.Join))
+	r.mux.HandleFunc("POST /api/v1/channels/{id}/leave", jwtMW.Handle(channelHandler.Leave))
+	r.mux.HandleFunc("DELETE /api/v1/channels/{id}", jwtMW.Handle(channelHandler.Delete))
 	r.mux.HandleFunc("GET /api/v1/channels/{id}/messages", jwtMW.Handle(channelHandler.History))
 
 	r.mux.HandleFunc("GET /api/v1/direct", jwtMW.Handle(directHandler.List))
 	r.mux.HandleFunc("POST /api/v1/direct/{user_id}", jwtMW.Handle(directHandler.Start))
+	r.mux.HandleFunc("DELETE /api/v1/direct/{id}", jwtMW.Handle(directHandler.Delete))
 	r.mux.HandleFunc("GET /api/v1/direct/{id}/messages", jwtMW.Handle(directHandler.History))
 
 	r.mux.HandleFunc("GET /api/v1/users/search", jwtMW.Handle(userHandler.Search))

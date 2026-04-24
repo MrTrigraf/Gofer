@@ -82,3 +82,24 @@ func (h *DirectHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(dms)
 }
+
+func (h *DirectHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
+	chatID := r.PathValue("id")
+
+	err := h.directUC.DeleteDM(r.Context(), chatID, userCtx.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrDirectChatNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "direct chat not found")
+			return
+		}
+		if errors.Is(err, domain.ErrForbidden) {
+			httputil.WriteError(w, http.StatusForbidden, "not a participant of this chat")
+			return
+		}
+		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

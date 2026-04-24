@@ -59,9 +59,20 @@ func (uc *DirectUseCase) StartDM(ctx context.Context, user1ID, user2ID string) (
 	return direct, nil
 }
 
-func (uc *DirectUseCase) DeleteDM(ctx context.Context, id string) error {
-	err := uc.directRepo.Delete(ctx, id)
+func (uc *DirectUseCase) DeleteDM(ctx context.Context, chatID, userID string) error {
+	direct, err := uc.directRepo.FindByID(ctx, chatID)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrDirectChatNotFound
+		}
+		return fmt.Errorf("delete direct: find: %w", err)
+	}
+
+	if direct.UserID1 != userID && direct.UserID2 != userID {
+		return domain.ErrForbidden
+	}
+
+	if err := uc.directRepo.Delete(ctx, chatID); err != nil {
 		return fmt.Errorf("delete direct: %w", err)
 	}
 

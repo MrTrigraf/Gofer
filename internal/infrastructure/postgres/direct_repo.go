@@ -46,6 +46,29 @@ func (r *DirectRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *DirectRepo) FindByID(ctx context.Context, id string) (domain.DirectChat, error) {
+	var direct domain.DirectChat
+
+	err := r.db.QueryRow(ctx, `
+		SELECT id, user1_id, user2_id, created_at
+		FROM direct_chats
+		WHERE id = $1
+	`, id).Scan(
+		&direct.ID,
+		&direct.UserID1,
+		&direct.UserID2,
+		&direct.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.DirectChat{}, domain.ErrNotFound
+		}
+		return domain.DirectChat{}, fmt.Errorf("find direct by id: %w", err)
+	}
+
+	return direct, nil
+}
+
 func (r *DirectRepo) FindByUsers(ctx context.Context, user1ID, user2ID string) (domain.DirectChat, error) {
 	var direct domain.DirectChat
 
