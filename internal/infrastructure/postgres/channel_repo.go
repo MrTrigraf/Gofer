@@ -117,29 +117,6 @@ func (r *ChannelRepo) FindByUserID(ctx context.Context, userID string) ([]domain
 	return channels, nil
 }
 
-func (r *ChannelRepo) FindByName(ctx context.Context, name string) (domain.Channel, error) {
-	var channel domain.Channel
-
-	err := r.db.QueryRow(ctx, `
-		SELECT id, channel_name, created_by, created_at
-		FROM channels
-		WHERE channel_name = $1
-	`, name).Scan(
-		&channel.ID,
-		&channel.Name,
-		&channel.CreatedBy,
-		&channel.CreatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.Channel{}, domain.ErrNotFound
-		}
-		return domain.Channel{}, fmt.Errorf("find channel by name: %w", err)
-	}
-
-	return channel, nil
-}
-
 func (r *ChannelRepo) AddMember(ctx context.Context, channelID, userID string) error {
 	_, err := r.db.Exec(ctx, `
         INSERT INTO channel_members (channel_id, user_id)

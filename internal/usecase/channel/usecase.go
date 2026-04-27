@@ -2,7 +2,6 @@ package channel
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -29,15 +28,6 @@ func New(
 }
 
 func (uc *ChannelUseCase) CreateChannel(ctx context.Context, name string, createdBy string) (domain.Channel, error) {
-	_, err := uc.channelRepo.FindByName(ctx, name)
-	if err == nil {
-		return domain.Channel{}, domain.ErrChannelAlreadyExists
-	}
-
-	if !errors.Is(err, domain.ErrNotFound) {
-		return domain.Channel{}, fmt.Errorf("create channel: check name: %w", err)
-	}
-
 	channel := domain.Channel{
 		Name:      name,
 		CreatedBy: createdBy,

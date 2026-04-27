@@ -1,0 +1,1 @@
+ALTER TABLE channels DROP CONSTRAINT IF EXISTS channels_channel_name_key;

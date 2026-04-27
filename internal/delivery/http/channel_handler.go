@@ -49,10 +49,6 @@ func (h *ChannelHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	ch, err := h.channelUC.CreateChannel(r.Context(), req.Name, userCtx.UserID)
 	if err != nil {
-		if errors.Is(err, domain.ErrChannelAlreadyExists) {
-			httputil.WriteError(w, http.StatusConflict, "channel already exists")
-			return
-		}
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
