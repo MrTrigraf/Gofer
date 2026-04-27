@@ -60,11 +60,6 @@ func (m *MockChannelRepo) FindByUserID(ctx context.Context, userID string) ([]do
 	return args.Get(0).([]domain.Channel), args.Error(1)
 }
 
-func (m *MockChannelRepo) FindByName(ctx context.Context, name string) (domain.Channel, error) {
-	args := m.Called(ctx, name)
-	return args.Get(0).(domain.Channel), args.Error(1)
-}
-
 func (m *MockChannelRepo) AddMember(ctx context.Context, channelID string, userID string) error {
 	args := m.Called(ctx, channelID, userID)
 	return args.Error(0)
@@ -111,9 +106,6 @@ func TestCreateChannel_Success(t *testing.T) {
 	messageRepo := &MockMessageRepo{}
 	uc := New(userRepo, channelRepo, messageRepo)
 
-	channelRepo.On("FindByName", mock.Anything, "general").
-		Return(domain.Channel{}, domain.ErrNotFound)
-
 	channelRepo.On("CreateWithMember", mock.Anything, mock.AnythingOfType("domain.Channel"), "user-1").
 		Return(domain.Channel{ID: "ch-1", Name: "general"}, nil)
 
@@ -122,21 +114,6 @@ func TestCreateChannel_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "general", ch.Name)
 	assert.Equal(t, "ch-1", ch.ID)
-}
-
-func TestCreateChannel_AlreadyExists(t *testing.T) {
-	userRepo := &MockUserRepo{}
-	channelRepo := &MockChannelRepo{}
-	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, channelRepo, messageRepo)
-
-	channelRepo.On("FindByName", mock.Anything, "general").
-		Return(domain.Channel{ID: "ch-1", Name: "general"}, nil)
-
-	_, err := uc.CreateChannel(context.Background(), "general", "user-1")
-
-	require.Error(t, err)
-	assert.ErrorIs(t, err, domain.ErrChannelAlreadyExists)
 }
 
 func TestJoinChannel_Success(t *testing.T) {

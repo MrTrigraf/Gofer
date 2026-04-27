@@ -13,7 +13,6 @@ var (
 	ErrDirectChatAlreadyExists = errors.New("direct chat already exists")
 	ErrMessageNotFound         = errors.New("message not found")
 	ErrEmptyMessage            = errors.New("empty message")
-	ErrChannelAlreadyExists    = errors.New("channel already exists")
 	ErrAlreadyMember           = errors.New("already member")
 	ErrNotMember               = errors.New("not member")
 	ErrTokenExpired            = errors.New("token expired")

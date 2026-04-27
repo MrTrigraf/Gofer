@@ -21,7 +21,6 @@ type ChannelRepository interface {
 	Delete(ctx context.Context, id string) error
 	FindByID(ctx context.Context, id string) (domain.Channel, error)
 	FindByUserID(ctx context.Context, userID string) ([]domain.Channel, error)
-	FindByName(ctx context.Context, name string) (domain.Channel, error)
 	AddMember(ctx context.Context, channelID string, userID string) error
 	GetMembers(ctx context.Context, channelID string) ([]domain.User, error)
 	RemoveMember(ctx context.Context, channelID string, userID string) error

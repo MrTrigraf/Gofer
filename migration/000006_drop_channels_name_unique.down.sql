@@ -1,0 +1,1 @@
+ALTER TABLE channels ADD CONSTRAINT channels_channel_name_key UNIQUE (channel_name);
