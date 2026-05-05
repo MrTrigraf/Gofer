@@ -95,14 +95,11 @@ func TestStartDM_Success(t *testing.T) {
 	messageRepo := &MockMessageRepo{}
 	uc := New(userRepo, directRepo, messageRepo)
 
-	directRepo.On("FindByUsers", mock.Anything, "user-1", "user-2").
-		Return(domain.DirectChat{}, domain.ErrNotFound)
-
-	userRepo.On("FindByID", mock.Anything, "user-1").
-		Return(domain.User{ID: "user-1"}, nil)
-
 	userRepo.On("FindByID", mock.Anything, "user-2").
 		Return(domain.User{ID: "user-2"}, nil)
+
+	directRepo.On("FindByUsers", mock.Anything, "user-1", "user-2").
+		Return(domain.DirectChat{}, domain.ErrNotFound)
 
 	directRepo.On("Create", mock.Anything, mock.AnythingOfType("domain.DirectChat")).
 		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
@@ -119,6 +116,9 @@ func TestStartDM_AlreadyExists(t *testing.T) {
 	messageRepo := &MockMessageRepo{}
 	uc := New(userRepo, directRepo, messageRepo)
 
+	userRepo.On("FindByID", mock.Anything, "user-2").
+		Return(domain.User{ID: "user-2"}, nil)
+
 	directRepo.On("FindByUsers", mock.Anything, "user-1", "user-2").
 		Return(domain.DirectChat{ID: "dm-1"}, nil)
 
@@ -126,6 +126,23 @@ func TestStartDM_AlreadyExists(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrDirectChatAlreadyExists)
+}
+
+func TestStartDM_TargetUserNotFound(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, directRepo, messageRepo)
+
+	userRepo.On("FindByID", mock.Anything, "user-missing").
+		Return(domain.User{}, domain.ErrNotFound)
+
+	_, err := uc.StartDM(context.Background(), "user-1", "user-missing")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrUserNotFound)
+	directRepo.AssertNotCalled(t, "FindByUsers", mock.Anything, mock.Anything, mock.Anything)
+	directRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
 func TestListDMs_Success(t *testing.T) {
