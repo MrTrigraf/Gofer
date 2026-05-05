@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gofer/internal/domain"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -37,6 +38,9 @@ func (r *UserRepo) Create(ctx context.Context, user domain.User) (domain.User, e
 }
 
 func (r *UserRepo) FindByID(ctx context.Context, id string) (domain.User, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return domain.User{}, domain.ErrNotFound
+	}
 	var user domain.User
 
 	err := r.db.QueryRow(ctx, `

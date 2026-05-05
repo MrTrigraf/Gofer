@@ -26,23 +26,22 @@ func New(userRepo usecase.UserRepository, directRepo usecase.DirectChatRepositor
 }
 
 func (uc *DirectUseCase) StartDM(ctx context.Context, user1ID, user2ID string) (domain.DirectChat, error) {
-	_, err := uc.directRepo.FindByUsers(ctx, user1ID, user2ID)
+	// Сначала проверяем, что target-юзер существует.
+	// userRepo.FindByID валидирует UUID и возвращает ErrNotFound и для битых, и для отсутствующих.
+	_, err := uc.userRepo.FindByID(ctx, user2ID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.DirectChat{}, domain.ErrUserNotFound
+		}
+		return domain.DirectChat{}, fmt.Errorf("start dm: find target user: %w", err)
+	}
+
+	_, err = uc.directRepo.FindByUsers(ctx, user1ID, user2ID)
 	if err == nil {
 		return domain.DirectChat{}, domain.ErrDirectChatAlreadyExists
 	}
-
 	if !errors.Is(err, domain.ErrNotFound) {
 		return domain.DirectChat{}, fmt.Errorf("start dm: check existing: %w", err)
-	}
-
-	_, err = uc.userRepo.FindByID(ctx, user1ID)
-	if err != nil {
-		return domain.DirectChat{}, domain.ErrUserNotFound
-	}
-
-	_, err = uc.userRepo.FindByID(ctx, user2ID)
-	if err != nil {
-		return domain.DirectChat{}, domain.ErrUserNotFound
 	}
 
 	direct := domain.DirectChat{
