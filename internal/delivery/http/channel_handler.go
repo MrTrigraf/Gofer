@@ -3,12 +3,14 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gofer/internal/delivery/http/middleware"
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/gofer/internal/usecase/channel"
 	"github.com/gofer/pkg/httputil"
 )
@@ -80,6 +82,7 @@ func (h *ChannelHandler) Join(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ChannelHandler) History(w http.ResponseWriter, r *http.Request) {
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	channelID := r.PathValue("id")
 
 	limitStr := r.URL.Query().Get("limit")
@@ -90,15 +93,27 @@ func (h *ChannelHandler) History(w http.ResponseWriter, r *http.Request) {
 		limit = 50
 	}
 
-	before, err := time.Parse(time.RFC3339, beforeStr)
-	if err != nil {
-		before = time.Now() // если не передали — берём текущее время
+	var before time.Time
+	if beforeStr != "" {
+		before, err = time.Parse(time.RFC3339, beforeStr)
+		if err != nil {
+			before = time.Time{}
+		}
 	}
 
-	messages, err := h.channelUC.GetChannelHistory(r.Context(), channelID, limit, before)
+	messages, err := h.channelUC.GetChannelHistory(r.Context(), channelID, userCtx.UserID, limit, before)
 	if err != nil {
+		if errors.Is(err, domain.ErrForbidden) {
+			httputil.WriteError(w, http.StatusForbidden, "not a member of this channel")
+			return
+		}
+		slog.Error("channel history failed", "channel", channelID, "user", userCtx.UserID, "err", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
+	}
+
+	if messages == nil {
+		messages = []dto.MessageResponse{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

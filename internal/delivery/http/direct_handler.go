@@ -3,12 +3,14 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gofer/internal/delivery/http/middleware"
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/gofer/internal/usecase/direct"
 	"github.com/gofer/pkg/httputil"
 )
@@ -45,6 +47,7 @@ func (h *DirectHandler) Start(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DirectHandler) History(w http.ResponseWriter, r *http.Request) {
+	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	directID := r.PathValue("id")
 
 	limitStr := r.URL.Query().Get("limit")
@@ -55,15 +58,31 @@ func (h *DirectHandler) History(w http.ResponseWriter, r *http.Request) {
 		limit = 50
 	}
 
-	before, err := time.Parse(time.RFC3339, beforeStr)
-	if err != nil {
-		before = time.Now() // если не передали — берём текущее время
+	var before time.Time
+	if beforeStr != "" {
+		before, err = time.Parse(time.RFC3339, beforeStr)
+		if err != nil {
+			before = time.Time{}
+		}
 	}
 
-	messages, err := h.directUC.GetDMHistory(r.Context(), directID, limit, before)
+	messages, err := h.directUC.GetDMHistory(r.Context(), directID, userCtx.UserID, limit, before)
 	if err != nil {
+		if errors.Is(err, domain.ErrDirectChatNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "direct chat not found")
+			return
+		}
+		if errors.Is(err, domain.ErrForbidden) {
+			httputil.WriteError(w, http.StatusForbidden, "not a participant of this chat")
+			return
+		}
+		slog.Error("dm history failed", "dm", directID, "user", userCtx.UserID, "err", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
+	}
+
+	if messages == nil {
+		messages = []dto.MessageResponse{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

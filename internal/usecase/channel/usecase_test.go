@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -98,6 +99,16 @@ func (m *MockMessageRepo) GetByChannelID(ctx context.Context, channelID string, 
 func (m *MockMessageRepo) GetByDirectChatID(ctx context.Context, directChatID string, limit int, before time.Time) ([]domain.Message, error) {
 	args := m.Called(ctx, directChatID, limit, before)
 	return args.Get(0).([]domain.Message), args.Error(1)
+}
+
+func (m *MockMessageRepo) GetByChannelIDWithUsernames(ctx context.Context, channelID string, limit int, before time.Time) ([]dto.MessageResponse, error) {
+	args := m.Called(ctx, channelID, limit, before)
+	return args.Get(0).([]dto.MessageResponse), args.Error(1)
+}
+
+func (m *MockMessageRepo) GetByDirectChatIDWithUsernames(ctx context.Context, directChatID string, limit int, before time.Time) ([]dto.MessageResponse, error) {
+	args := m.Called(ctx, directChatID, limit, before)
+	return args.Get(0).([]dto.MessageResponse), args.Error(1)
 }
 
 func TestCreateChannel_Success(t *testing.T) {
@@ -202,4 +213,40 @@ func TestDeleteChannel_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrGroupNotFound)
 	channelRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+}
+
+func TestGetChannelHistory_Success(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	channelRepo.On("IsMember", mock.Anything, "ch-1", "user-1").Return(true, nil)
+	messageRepo.On("GetByChannelIDWithUsernames", mock.Anything, "ch-1", 50, mock.AnythingOfType("time.Time")).
+		Return([]dto.MessageResponse{
+			{ID: "m1", SenderID: "user-1", Username: "alice", Content: "hi"},
+			{ID: "m2", SenderID: "user-2", Username: "bob", Content: "hello"},
+		}, nil)
+
+	msgs, err := uc.GetChannelHistory(context.Background(), "ch-1", "user-1", 50, time.Now())
+
+	require.NoError(t, err)
+	assert.Len(t, msgs, 2)
+	assert.Equal(t, "alice", msgs[0].Username)
+}
+
+func TestGetChannelHistory_NotMember(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	channelRepo.On("IsMember", mock.Anything, "ch-1", "user-99").Return(false, nil)
+
+	_, err := uc.GetChannelHistory(context.Background(), "ch-1", "user-99", 50, time.Now())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrForbidden)
+	messageRepo.AssertNotCalled(t, "GetByChannelIDWithUsernames",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

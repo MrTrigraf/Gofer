@@ -16,6 +16,7 @@ import (
 	"github.com/gofer/tui/screen"
 	"github.com/gofer/tui/styles"
 	"github.com/gofer/tui/views/popup"
+	"github.com/gofer/tui/wsmsg"
 )
 
 type activeTab int
@@ -133,6 +134,7 @@ type HomeModel struct {
 	originX, originY int
 
 	hitboxes []screen.Hitbox
+	chat     *ChatPanel
 }
 
 func NewHome(apiClient *api.Client, state auth.AuthState) *HomeModel {
@@ -141,6 +143,7 @@ func NewHome(apiClient *api.Client, state auth.AuthState) *HomeModel {
 		state:     state,
 		tab:       tabDirect,
 		addListVP: viewport.New(0, 0),
+		chat:      NewChatPanel(apiClient, state),
 	}
 }
 
@@ -303,7 +306,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		if !m.channelExists(m.selectedID) {
 			m.selectedID = ""
 		}
-		return m, nil
+		return m, m.syncChatTarget()
 	case ChannelsLoadErrorMsg:
 		m.loading = false
 		m.loadErr = msg.Err
@@ -316,7 +319,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		if m.tab == tabDirect && m.cursor >= len(m.dms) {
 			m.cursor = 0
 		}
-		return m, nil
+		return m, m.syncChatTarget()
 	case DMsLoadErrorMsg:
 		m.dmsLoading = false
 		m.dmsLoadErr = msg.Err
@@ -388,7 +391,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		if msg.DMID == m.selectedDMID {
 			m.selectedDMID = ""
 		}
-		return m, loadDMsCmd(m.apiClient)
+		return m, tea.Batch(loadDMsCmd(m.apiClient), m.syncChatTarget())
 	case DeleteDMErrorMsg:
 		m.actionErr = msg.Err
 		return m, nil
@@ -410,6 +413,17 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 	// === ВВОД ===
 
 	case tea.KeyMsg:
+		if m.chat.HasTarget() {
+			switch msg.String() {
+			case "up", "down", "tab", "esc", "enter":
+				// падаем дальше в навигационный switch
+			default:
+				var cmd tea.Cmd
+				m.chat, cmd = m.chat.Update(msg)
+				return m, cmd
+			}
+		}
+
 		switch msg.String() {
 		case "a":
 			if !m.addMode {
@@ -438,28 +452,41 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		case "esc":
 			if m.addMode {
 				m.addMode = false
+				return m, nil
+			}
+			if m.chat.HasTarget() {
+				m.chat.Clear()
+				m.selectedID = ""
+				m.selectedDMID = ""
+				return m, nil
 			}
 			return m, nil
 		case "tab":
 			m.toggleTab()
 			return m, nil
 		case "up":
+			var cmd tea.Cmd
 			if m.cursor > 0 {
 				m.cursor--
-				m.syncSelectionFromCursor()
+				cmd = m.syncSelectionFromCursor()
 				m.ensureCursorVisible()
 			}
-			return m, nil
+			return m, cmd
 		case "down":
+			var cmd tea.Cmd
 			if m.cursor < m.listLen()-1 {
 				m.cursor++
-				m.syncSelectionFromCursor()
+				cmd = m.syncSelectionFromCursor()
 				m.ensureCursorVisible()
 			}
-			return m, nil
+			return m, cmd
 		case "enter":
-			m.activateCursor()
-			return m, nil
+			if m.chat.HasTarget() {
+				var cmd tea.Cmd
+				m.chat, cmd = m.chat.Update(msg)
+				return m, cmd
+			}
+			return m, m.activateCursor()
 		}
 
 	case tea.MouseMsg:
@@ -477,13 +504,17 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		case id == "tab_direct":
 			m.tab = tabDirect
 			m.cursor = 0
+
 		case id == "tab_channels":
 			m.tab = tabChannels
 			m.cursor = 0
+
 		case id == "sidebar_add":
 			m.addMode = true
+
 		case id == "sidebar_back":
 			m.addMode = false
+
 		case id == "add_channel_create":
 			m.popup = popup.NewForm(
 				"create_channel:-",
@@ -494,6 +525,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 				32,
 			)
 			return m, m.popup.Init()
+
 		case id == "add_channel_join":
 			m.popup = popup.NewForm(
 				"join_channel:-",
@@ -504,6 +536,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 				40,
 			)
 			return m, m.popup.Init()
+
 		case id == "add_channel_delete":
 			if m.selectedID == "" {
 				m.popup = popup.NewWarning(
@@ -514,6 +547,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 			} else {
 				m.openDeleteChannelConfirm(m.selectedID)
 			}
+
 		case id == "add_dm_start":
 			m.popup = popup.NewForm(
 				"start_dm:-",
@@ -524,22 +558,28 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 				40,
 			)
 			return m, m.popup.Init()
+
 		case id == "my_uuid":
 			return m, clipboard.CopyCmd("my_uuid", m.state.UserID)
+
 		case id == "channel_uuid":
 			if m.selectedID != "" {
 				return m, clipboard.CopyCmd("channel_uuid", m.selectedID)
 			}
+
 		case id == "dm_user_uuid":
 			if dm := m.findDM(m.selectedDMID); dm != nil {
 				return m, clipboard.CopyCmd("dm_user_uuid", dm.OtherUserID)
 			}
+
 		case strings.HasPrefix(id, "channel_leave_"):
 			channelID := strings.TrimPrefix(id, "channel_leave_")
 			m.openLeaveChannelConfirm(channelID)
+
 		case strings.HasPrefix(id, "dm_delete_"):
 			dmID := strings.TrimPrefix(id, "dm_delete_")
 			m.openDeleteDMConfirm(dmID)
+
 		case strings.HasPrefix(id, "channel_"):
 			channelID := strings.TrimPrefix(id, "channel_")
 			m.selectedID = channelID
@@ -549,6 +589,8 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 					break
 				}
 			}
+			return m, m.syncChatTarget()
+
 		case strings.HasPrefix(id, "dm_"):
 			dmID := strings.TrimPrefix(id, "dm_")
 			m.selectedDMID = dmID
@@ -558,7 +600,18 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 					break
 				}
 			}
+			return m, m.syncChatTarget()
 		}
+
+	case historyLoadedMsg, historyFailedMsg:
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Update(msg)
+		return m, cmd
+
+	case wsmsg.IncomingMsg, wsmsg.DisconnectedMsg:
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -752,23 +805,51 @@ func (m *HomeModel) listLen() int {
 	return len(m.dms)
 }
 
-func (m *HomeModel) activateCursor() {
+func (m *HomeModel) activateCursor() tea.Cmd {
 	if m.tab == tabChannels {
 		if m.cursor >= 0 && m.cursor < len(m.channels) {
 			m.selectedID = m.channels[m.cursor].ID
+			return m.syncChatTarget()
 		}
-		return
+		return nil
 	}
 	if m.cursor >= 0 && m.cursor < len(m.dms) {
 		m.selectedDMID = m.dms[m.cursor].ID
+		return m.syncChatTarget()
 	}
+	return nil
 }
 
-func (m *HomeModel) syncSelectionFromCursor() {
+func (m *HomeModel) syncSelectionFromCursor() tea.Cmd {
 	if !m.addMode {
-		return
+		return nil
 	}
-	m.activateCursor()
+	return m.activateCursor()
+}
+
+func (m *HomeModel) syncChatTarget() tea.Cmd {
+	if m.tab == tabChannels && m.selectedID != "" {
+		name := m.channelName(m.selectedID)
+		if name == "" {
+			name = "unknown"
+		}
+		return m.chat.SetTarget(ChatTargetChannel, m.selectedID, "# "+name)
+	}
+	if m.tab == tabDirect && m.selectedDMID != "" {
+		var username string
+		for _, dm := range m.dms {
+			if dm.ID == m.selectedDMID {
+				username = dm.OtherUsername
+				break
+			}
+		}
+		if username == "" {
+			username = "unknown"
+		}
+		return m.chat.SetTarget(ChatTargetDirect, m.selectedDMID, "@ "+username)
+	}
+	m.chat.Clear()
+	return nil
 }
 
 func (m *HomeModel) ensureCursorVisible() {
@@ -1022,20 +1103,14 @@ func (m *HomeModel) renderChatArea() string {
 		return m.renderAddChatArea(chatW, chatH)
 	}
 
-	var content string
-	switch {
-	case m.tab == tabChannels && m.selectedID != "":
-		content = m.renderChannelChatHeader()
-	case m.tab == tabDirect && m.selectedDMID != "":
-		content = m.renderDMChatHeader()
-	default:
-		content = styles.StyleFaint.Render("Select a channel or chat")
+	if m.chat.HasTarget() {
+		return m.chat.View(chatW, chatH)
 	}
 
 	return lipgloss.Place(
 		chatW, chatH,
 		lipgloss.Center, lipgloss.Center,
-		content,
+		styles.StyleFaint.Render("Select a channel or chat"),
 	)
 }
 
@@ -1302,34 +1377,6 @@ func (m *HomeModel) renderDMUUIDCard() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, uuid+feedback)
-}
-
-func (m *HomeModel) renderChannelChatHeader() string {
-	name := m.channelName(m.selectedID)
-	if name == "" {
-		name = "unknown"
-	}
-
-	title := styles.StyleTitle.Render(fmt.Sprintf("# %s", name))
-	hint := styles.StyleFaint.Render("(chat coming in 8.3 with WebSocket)")
-	return lipgloss.JoinVertical(lipgloss.Center, title, "", hint)
-}
-
-func (m *HomeModel) renderDMChatHeader() string {
-	var username string
-	for _, dm := range m.dms {
-		if dm.ID == m.selectedDMID {
-			username = dm.OtherUsername
-			break
-		}
-	}
-	if username == "" {
-		username = "unknown"
-	}
-
-	title := styles.StyleTitle.Render(fmt.Sprintf("@ %s", username))
-	hint := styles.StyleFaint.Render("(chat coming in 8.3 with WebSocket)")
-	return lipgloss.JoinVertical(lipgloss.Center, title, "", hint)
 }
 
 func humanizeChannelError(err error) string {

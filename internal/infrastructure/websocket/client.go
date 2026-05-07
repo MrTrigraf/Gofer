@@ -8,16 +8,12 @@ import (
 )
 
 const (
-	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 512 << 10
+	writeWait         = 10 * time.Second
+	pongWait          = 60 * time.Second
+	pingPeriod        = (pongWait * 9) / 10
+	maxMessageSize    = 512 << 10
+	unregisterTimeout = time.Second
 )
-
-type IncomingMessage struct {
-	client *Client
-	data   []byte
-}
 
 type Client struct {
 	hub      *Hub
@@ -39,7 +35,12 @@ func NewClient(hub *Hub, conn *websocket.Conn, userID, username string) *Client 
 
 func (c *Client) readPump() {
 	defer func() {
-		c.hub.unregister <- c
+		t := time.NewTimer(unregisterTimeout)
+		defer t.Stop()
+		select {
+		case c.hub.unregister <- c:
+		case <-t.C:
+		}
 		c.conn.Close()
 	}()
 
@@ -55,8 +56,8 @@ func (c *Client) readPump() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err,
 				websocket.CloseGoingAway,
-				websocket.CloseAbnormalClosure) {
-				slog.Error("read error", "user", c.userID, "err", err)
+				websocket.CloseNormalClosure) {
+				slog.Error("ws read error", "user", c.userID, "err", err)
 			}
 			return
 		}
@@ -77,6 +78,7 @@ func (c *Client) writePump() {
 		case message, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
+				// send закрыт Hub-ом — нас кикнули или сервер выключается
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}

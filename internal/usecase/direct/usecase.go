@@ -26,8 +26,6 @@ func New(userRepo usecase.UserRepository, directRepo usecase.DirectChatRepositor
 }
 
 func (uc *DirectUseCase) StartDM(ctx context.Context, user1ID, user2ID string) (domain.DirectChat, error) {
-	// Сначала проверяем, что target-юзер существует.
-	// userRepo.FindByID валидирует UUID и возвращает ErrNotFound и для битых, и для отсутствующих.
 	_, err := uc.userRepo.FindByID(ctx, user2ID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -78,10 +76,28 @@ func (uc *DirectUseCase) DeleteDM(ctx context.Context, chatID, userID string) er
 	return nil
 }
 
-func (uc *DirectUseCase) GetDMHistory(ctx context.Context, directChatID string, limit int, before time.Time) ([]domain.Message, error) {
-	messages, err := uc.messageRepo.GetByDirectChatID(ctx, directChatID, limit, before)
+func (uc *DirectUseCase) GetDMHistory(
+	ctx context.Context,
+	directChatID string,
+	userID string,
+	limit int,
+	before time.Time,
+) ([]dto.MessageResponse, error) {
+	direct, err := uc.directRepo.FindByID(ctx, directChatID)
 	if err != nil {
-		return nil, fmt.Errorf("list direct: %w", err)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, domain.ErrDirectChatNotFound
+		}
+		return nil, fmt.Errorf("get dm history: find: %w", err)
+	}
+
+	if direct.UserID1 != userID && direct.UserID2 != userID {
+		return nil, domain.ErrForbidden
+	}
+
+	messages, err := uc.messageRepo.GetByDirectChatIDWithUsernames(ctx, directChatID, limit, before)
+	if err != nil {
+		return nil, fmt.Errorf("get dm history: %w", err)
 	}
 
 	return messages, nil

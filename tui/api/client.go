@@ -1,11 +1,3 @@
-// Package api — HTTP-клиент для общения TUI с gofer-сервером.
-//
-// Предоставляет типизированные методы для REST-эндпоинтов.
-// Ошибки сервера (401, 404, 409) транслируются в sentinel-errors
-// (см. errors.go), которые UI может сравнивать через errors.Is().
-//
-// Токен авторизации хранится внутри клиента (см. SetAuth) и
-// автоматически подкладывается в заголовок Authorization.
 package api
 
 import (
@@ -14,15 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"sync"
 	"time"
 )
 
-// Client — HTTP-клиент к gofer-серверу.
-//
-// Безопасен для использования из нескольких горутин (http.Client thread-safe).
-// Токен под mutex'ом, потому что SetAuth вызывается из Update,
-// а чтение — из горутин, выполняющих запросы.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
@@ -31,9 +20,14 @@ type Client struct {
 	accessToken string
 }
 
-// New — создаёт клиента, указывающего на baseURL.
-//
-// Пример: api.New("http://localhost:8080")
+type Message struct {
+	ID        string    `json:"id"`
+	SenderID  string    `json:"sender_id"`
+	Username  string    `json:"username"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 func New(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -43,34 +37,22 @@ func New(baseURL string) *Client {
 	}
 }
 
-// SetAuth — устанавливает access-токен, который будет отправляться
-// в заголовке Authorization для всех последующих запросов.
-//
-// Пустая строка сбрасывает авторизацию.
 func (c *Client) SetAuth(accessToken string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.accessToken = accessToken
 }
 
-// authHeader — читает текущий токен под RLock.
 func (c *Client) authHeader() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.accessToken
 }
 
-// errorResponse — формат JSON-ошибок сервера (pkg/httputil.ErrorResponse).
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// do — общая реализация HTTP-запроса:
-//  1. сериализует body в JSON (если есть);
-//  2. подкладывает токен в заголовок Authorization (если установлен);
-//  3. выполняет запрос с контекстом;
-//  4. транслирует HTTP-код в sentinel-ошибку;
-//  5. парсит JSON-ответ в out (если передан).
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	var reqBody *bytes.Buffer
 	if body != nil {
@@ -90,7 +72,6 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// Автоматическая авторизация: токен есть → Bearer.
 	if token := c.authHeader(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -113,10 +94,6 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	return nil
 }
 
-// translateError — превращает HTTP-ответ сервера в sentinel-ошибку.
-//
-// UI различает "неверный пароль" (красная строка) / "user не найден"
-// (другое сообщение) / "сервер упал" (третье) — через errors.Is.
 func translateError(resp *http.Response) error {
 	var msg string
 	var errResp errorResponse
@@ -142,4 +119,53 @@ func translateError(resp *http.Response) error {
 	}
 
 	return fmt.Errorf("%w: status=%d msg=%q", ErrUnexpected, resp.StatusCode, msg)
+}
+
+func buildHistoryPath(base string, limit int, before time.Time) string {
+	q := url.Values{}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if !before.IsZero() {
+		q.Set("before", before.Format(time.RFC3339))
+	}
+	if len(q) == 0 {
+		return base
+	}
+	return base + "?" + q.Encode()
+}
+
+func (c *Client) WSURL() string {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return c.baseURL + "/ws"
+	}
+	switch u.Scheme {
+	case "https":
+		u.Scheme = "wss"
+	default:
+		u.Scheme = "ws"
+	}
+	u.Path = "/ws"
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+func (c *Client) GetDMMessages(ctx context.Context, dmID string, limit int, before time.Time) ([]Message, error) {
+	path := buildHistoryPath("/api/v1/direct/"+dmID+"/messages", limit, before)
+	var out []Message
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) GetChannelMessages(ctx context.Context, channelID string, limit int, before time.Time) ([]Message, error) {
+	path := buildHistoryPath("/api/v1/channels/"+channelID+"/messages", limit, before)
+	var out []Message
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

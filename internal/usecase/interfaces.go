@@ -32,6 +32,8 @@ type MessageRepository interface {
 	Delete(ctx context.Context, id string) error
 	GetByChannelID(ctx context.Context, channelID string, limit int, before time.Time) ([]domain.Message, error)
 	GetByDirectChatID(ctx context.Context, directChatID string, limit int, before time.Time) ([]domain.Message, error)
+	GetByChannelIDWithUsernames(ctx context.Context, channelID string, limit int, before time.Time) ([]dto.MessageResponse, error)
+	GetByDirectChatIDWithUsernames(ctx context.Context, directChatID string, limit int, before time.Time) ([]dto.MessageResponse, error)
 }
 
 type DirectChatRepository interface {

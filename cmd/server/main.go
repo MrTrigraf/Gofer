@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,18 +17,36 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const shutdownTimeout = 10 * time.Second
+
 func main() {
 	cfg := mustLoadConfig()
 	pool := mustConnectDB(cfg)
 	defer pool.Close()
 
-	router, hub := httpdelivery.NewRouter(pool, cfg)
-	go hub.Run()
+	ctx, stop := signal.NotifyContext(context.Background(),
+		syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	if err := runServer(router, cfg.Server.Port); err != nil {
+	router, hub := httpdelivery.NewRouter(pool, cfg)
+
+	hubDone := make(chan struct{})
+	go func() {
+		defer close(hubDone)
+		hub.Run(ctx)
+	}()
+
+	if err := runServer(ctx, router, cfg.Server.Port); err != nil {
 		slog.Error("server failed", "err", err)
 		os.Exit(1)
 	}
+
+	select {
+	case <-hubDone:
+	case <-time.After(shutdownTimeout):
+		slog.Warn("hub did not stop in time")
+	}
+	slog.Info("bye")
 }
 
 func mustLoadConfig() *config.Config {
@@ -48,43 +67,38 @@ func mustConnectDB(cfg *config.Config) *pgxpool.Pool {
 	return pool
 }
 
-func startServer(server *http.Server) <-chan error {
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.ListenAndServe()
-	}()
-	return errCh
-}
-
-func waitSignal() <-chan os.Signal {
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	return quit
-}
-
-func runServer(handler http.Handler, port string) error {
+func runServer(ctx context.Context, handler http.Handler, port string) error {
 	server := &http.Server{
 		Addr:    ":" + port,
 		Handler: handler,
 	}
 
-	errCh := startServer(server)
+	serverErr := make(chan error, 1)
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
 	slog.Info("server started", "port", port)
 
 	select {
-	case err := <-errCh:
-		return fmt.Errorf("server error: %w", err)
-	case <-waitSignal():
+	case err, ok := <-serverErr:
+		if ok && err != nil {
+			return fmt.Errorf("server error: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		slog.Info("shutdown signal received")
 	}
 
-	slog.Info("shutting down server...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown error: %w", err)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
 	}
 
-	slog.Info("server stopped")
+	slog.Info("http server stopped")
 	return nil
 }

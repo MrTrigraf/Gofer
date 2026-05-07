@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -19,10 +20,10 @@ func NewMessageRepo(db *pgxpool.Pool) *MessageRepo {
 
 func (r *MessageRepo) Create(ctx context.Context, message domain.Message) (domain.Message, error) {
 	err := r.db.QueryRow(ctx, `
-        INSERT INTO messages (user_id, content, channel_id, direct_chat_id, created_at)
-		VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO messages (user_id, content, channel_id, direct_chat_id)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id, user_id, content, channel_id, direct_chat_id, created_at
-    `, message.UserID, message.Content, &message.ChannelID, &message.DirectChatID, message.CreatedAt).Scan(
+    `, message.UserID, message.Content, message.ChannelID, message.DirectChatID).Scan(
 		&message.ID,
 		&message.UserID,
 		&message.Content,
@@ -128,4 +129,97 @@ func (r *MessageRepo) GetByDirectChatID(ctx context.Context, directChatID string
 	}
 
 	return messages, nil
+}
+
+func (r *MessageRepo) GetByChannelIDWithUsernames(
+	ctx context.Context,
+	channelID string,
+	limit int,
+	before time.Time,
+) ([]dto.MessageResponse, error) {
+	if before.IsZero() {
+
+		before = time.Now().Add(time.Minute)
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT * FROM (
+			SELECT m.id, m.user_id, u.user_name AS username, m.content, m.created_at
+			FROM messages m
+			JOIN users u ON u.id = m.user_id
+			WHERE m.channel_id = $1 AND m.created_at < $2
+			ORDER BY m.created_at DESC
+			LIMIT $3
+		) sub
+		ORDER BY created_at ASC
+	`, channelID, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query channel messages: %w", err)
+	}
+	defer rows.Close()
+
+	var out []dto.MessageResponse
+	for rows.Next() {
+		var msg dto.MessageResponse
+		if err := rows.Scan(
+			&msg.ID,
+			&msg.SenderID,
+			&msg.Username,
+			&msg.Content,
+			&msg.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan channel message: %w", err)
+		}
+		out = append(out, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iter channel messages: %w", err)
+	}
+	return out, nil
+}
+
+func (r *MessageRepo) GetByDirectChatIDWithUsernames(
+	ctx context.Context,
+	directChatID string,
+	limit int,
+	before time.Time,
+) ([]dto.MessageResponse, error) {
+	if before.IsZero() {
+		before = time.Now().Add(time.Minute)
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT * FROM (
+			SELECT m.id, m.user_id, u.user_name AS username, m.content, m.created_at
+			FROM messages m
+			JOIN users u ON u.id = m.user_id
+			WHERE m.direct_chat_id = $1 AND m.created_at < $2
+			ORDER BY m.created_at DESC
+			LIMIT $3
+		) sub
+		ORDER BY created_at ASC
+	`, directChatID, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query dm messages: %w", err)
+	}
+	defer rows.Close()
+
+	var out []dto.MessageResponse
+	for rows.Next() {
+		var msg dto.MessageResponse
+		if err := rows.Scan(
+			&msg.ID,
+			&msg.SenderID,
+			&msg.Username,
+			&msg.Content,
+			&msg.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan dm message: %w", err)
+		}
+		out = append(out, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iter dm messages: %w", err)
+	}
+	return out, nil
 }

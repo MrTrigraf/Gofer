@@ -34,17 +34,22 @@ func NewHandler(hub *Hub, tokenService usecase.TokenService) *Handler {
 
 func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
 	claims, err := h.tokenService.ParseAccessToken(tokenString)
 	if err != nil {
+		slog.Warn("ws: token parse failed", "err", err)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		slog.Error("upgrade error", "user", claims.Username, "err", err)
+		slog.Error("ws: upgrade failed", "user", claims.Username, "err", err)
 		return
 	}
 

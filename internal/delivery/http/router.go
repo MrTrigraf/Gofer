@@ -36,7 +36,7 @@ func NewRouter(pool *pgxpool.Pool, cfg *config.Config) (*Router, *websocket.Hub)
 	userUC := user.New(userRepo)
 
 	// websocket
-	hub := websocket.NewHub(channelRepo, messageRepo)
+	hub := websocket.NewHub(channelRepo, messageRepo, directRepo)
 	wsHandler := websocket.NewHandler(hub, tokenSvc)
 
 	// middleware и хендлеры

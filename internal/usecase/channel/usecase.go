@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofer/internal/domain"
+	"github.com/gofer/internal/dto"
 	"github.com/gofer/internal/usecase"
 )
 
@@ -106,8 +107,22 @@ func (uc *ChannelUseCase) DeleteChannel(ctx context.Context, channelID, userID s
 	return nil
 }
 
-func (uc *ChannelUseCase) GetChannelHistory(ctx context.Context, channelID string, limit int, before time.Time) ([]domain.Message, error) {
-	messages, err := uc.messageRepo.GetByChannelID(ctx, channelID, limit, before)
+func (uc *ChannelUseCase) GetChannelHistory(
+	ctx context.Context,
+	channelID string,
+	userID string,
+	limit int,
+	before time.Time,
+) ([]dto.MessageResponse, error) {
+	isMember, err := uc.channelRepo.IsMember(ctx, channelID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get channel history: check membership: %w", err)
+	}
+	if !isMember {
+		return nil, domain.ErrForbidden
+	}
+
+	messages, err := uc.messageRepo.GetByChannelIDWithUsernames(ctx, channelID, limit, before)
 	if err != nil {
 		return nil, fmt.Errorf("get channel history: %w", err)
 	}

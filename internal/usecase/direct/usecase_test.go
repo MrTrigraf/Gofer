@@ -89,6 +89,16 @@ func (m *MockMessageRepo) GetByDirectChatID(ctx context.Context, directChatID st
 	return args.Get(0).([]domain.Message), args.Error(1)
 }
 
+func (m *MockMessageRepo) GetByChannelIDWithUsernames(ctx context.Context, channelID string, limit int, before time.Time) ([]dto.MessageResponse, error) {
+	args := m.Called(ctx, channelID, limit, before)
+	return args.Get(0).([]dto.MessageResponse), args.Error(1)
+}
+
+func (m *MockMessageRepo) GetByDirectChatIDWithUsernames(ctx context.Context, directChatID string, limit int, before time.Time) ([]dto.MessageResponse, error) {
+	args := m.Called(ctx, directChatID, limit, before)
+	return args.Get(0).([]dto.MessageResponse), args.Error(1)
+}
+
 func TestStartDM_Success(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
@@ -213,4 +223,56 @@ func TestDeleteDM_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrDirectChatNotFound)
 	directRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+}
+
+func TestGetDMHistory_Success(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, directRepo, messageRepo)
+
+	directRepo.On("FindByID", mock.Anything, "dm-1").
+		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
+	messageRepo.On("GetByDirectChatIDWithUsernames", mock.Anything, "dm-1", 50, mock.AnythingOfType("time.Time")).
+		Return([]dto.MessageResponse{
+			{ID: "m1", SenderID: "user-1", Username: "alice", Content: "hi"},
+		}, nil)
+
+	msgs, err := uc.GetDMHistory(context.Background(), "dm-1", "user-1", 50, time.Now())
+
+	require.NoError(t, err)
+	assert.Len(t, msgs, 1)
+	assert.Equal(t, "alice", msgs[0].Username)
+}
+
+func TestGetDMHistory_NotParticipant(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, directRepo, messageRepo)
+
+	directRepo.On("FindByID", mock.Anything, "dm-1").
+		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
+
+	_, err := uc.GetDMHistory(context.Background(), "dm-1", "user-99", 50, time.Now())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrForbidden)
+	messageRepo.AssertNotCalled(t, "GetByDirectChatIDWithUsernames",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestGetDMHistory_NotFound(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, directRepo, messageRepo)
+
+	directRepo.On("FindByID", mock.Anything, "dm-missing").
+		Return(domain.DirectChat{}, domain.ErrNotFound)
+
+	_, err := uc.GetDMHistory(context.Background(), "dm-missing", "user-1", 50, time.Now())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrDirectChatNotFound)
 }
