@@ -26,10 +26,47 @@ const historyLoadLimit = 50
 
 const inputCharLimit = 2000
 
+// FIX(8.4.1.b): окно "подозрительных" sent-сообщений.
+// При обрыве WS все наши исходящие, ставшие sent за последние
+// recentSentWindow, перекрашиваются в failed (вариант X): они могли
+// уйти в мёртвый TCP-буфер и не дойти до сервера.
+const recentSentWindow = 10 * time.Second
+
+// FIX(8.4.1.b): статус доставки нашего исходящего сообщения.
+type msgStatus int
+
+const (
+	statusSent    msgStatus = iota // на сервере (история, входящие, подтверждённые)
+	statusPending                  // отправлено локально, ждём результата Send()
+	statusFailed                   // доставка провалилась
+)
+
+// FIX(8.4.1.b): chatMessage — api.Message + UI-метаданные о доставке.
+// api.Message не трогаем: это DTO транспортного слоя, статус — чисто
+// UI-понятие, ему здесь не место. Обёртка живёт только внутри views.
+type chatMessage struct {
+	api.Message
+	localID int       // трек-номер нашего исходящего; 0 = чужое/историческое
+	status  msgStatus // статус доставки
+	sentAt  time.Time // момент перехода в statusSent (для recentSentWindow)
+}
+
 type WSSendMsg struct {
 	Type     string
 	TargetID string
 	Content  string
+	LocalID  int // FIX(8.4.1.b): трек-номер для последующего OK/Failed
+}
+
+// FIX(8.4.1.b): результаты отправки, приходят из update.go.
+// WSSendOKMsg — Send() успешно положил сообщение в WS-буфер.
+type WSSendOKMsg struct {
+	LocalID int
+}
+
+// WSSendFailedMsg — отправка не удалась (ws == nil или ошибка Send()).
+type WSSendFailedMsg struct {
+	LocalID int
 }
 
 type ChatPanel struct {
@@ -40,12 +77,14 @@ type ChatPanel struct {
 	targetID    string
 	displayName string
 
-	messages []api.Message
+	messages []chatMessage // FIX(8.4.1.b): было []api.Message
 	loading  bool
 	loadErr  error
 
 	reqSeq    int
 	activeReq int
+
+	localSeq int // FIX(8.4.1.b): счётчик localID для исходящих
 
 	input textinput.Model
 }
@@ -108,7 +147,14 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		}
 		p.loading = false
 		p.loadErr = nil
-		p.messages = m.messages
+		// FIX(8.4.1.b): история — сообщения уже на сервере, статус sent.
+		p.messages = p.messages[:0]
+		for _, am := range m.messages {
+			p.messages = append(p.messages, chatMessage{
+				Message: am,
+				status:  statusSent,
+			})
+		}
 		return p, nil
 
 	case historyFailedMsg:
@@ -123,21 +169,74 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		if !p.matchesIncoming(m.Message) {
 			return p, nil
 		}
-		p.messages = append(p.messages, api.Message{
-			ID:        m.Message.ID,
-			SenderID:  m.Message.SenderID,
-			Username:  m.Message.Username,
-			Content:   m.Message.Content,
-			CreatedAt: m.Message.CreatedAt,
+		// FIX(8.4.1.b): входящее с сервера — статус sent.
+		p.messages = append(p.messages, chatMessage{
+			Message: api.Message{
+				ID:        m.Message.ID,
+				SenderID:  m.Message.SenderID,
+				Username:  m.Message.Username,
+				Content:   m.Message.Content,
+				CreatedAt: m.Message.CreatedAt,
+			},
+			status: statusSent,
 		})
 		return p, nil
 
+	// FIX(8.4.1.b): Send() положил сообщение в WS-буфер — pending → sent.
+	case WSSendOKMsg:
+		for i := range p.messages {
+			if p.messages[i].localID == m.LocalID {
+				if p.messages[i].status == statusPending {
+					p.messages[i].status = statusSent
+					p.messages[i].sentAt = time.Now()
+				}
+				break
+			}
+		}
+		return p, nil
+
+	// FIX(8.4.1.b): отправка провалилась — помечаем сообщение failed.
+	case WSSendFailedMsg:
+		for i := range p.messages {
+			if p.messages[i].localID == m.LocalID {
+				p.messages[i].status = statusFailed
+				break
+			}
+		}
+		return p, nil
+
+	// FIX(8.4.1.b): обрыв WS (вариант X). Все НАШИ исходящие
+	// (localID != 0) под подозрением: pending — точно не дошли;
+	// недавно-sent — могли уйти в мёртвый сокет. Перекрашиваем в failed.
 	case wsmsg.DisconnectedMsg:
+		now := time.Now()
+		for i := range p.messages {
+			cm := &p.messages[i]
+			if cm.localID == 0 {
+				continue // чужое или историческое — не трогаем
+			}
+			switch cm.status {
+			case statusPending:
+				cm.status = statusFailed
+			case statusSent:
+				if now.Sub(cm.sentAt) < recentSentWindow {
+					cm.status = statusFailed
+				}
+			}
+		}
 		return p, nil
 
 	case tea.KeyMsg:
-		if m.Type == tea.KeyEnter && p.input.Focused() {
-			return p, p.handleSend()
+		// FIX(8.4.1.e): Enter — отправка нового, Ctrl+R — ретрай failed.
+		// Оба действия только при сфокусированном поле ввода — для
+		// единообразия и чтобы ctrl+r не срабатывал вне чата.
+		if p.input.Focused() {
+			switch {
+			case m.Type == tea.KeyEnter:
+				return p, p.handleSend()
+			case m.String() == "ctrl+r":
+				return p, p.retryFailed()
+			}
 		}
 	}
 	if p.input.Focused() {
@@ -146,6 +245,16 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		return p, cmd
 	}
 	return p, nil
+}
+
+// FIX(8.4.1.e): wsType возвращает тип WS-сообщения для текущего чата.
+// Вынесено из handleSend, чтобы handleSend и retryFailed не дублировали
+// одно и то же правило (пункт #5 TODO).
+func (p *ChatPanel) wsType() string {
+	if p.targetType == ChatTargetDirect {
+		return "dm_message"
+	}
+	return "channel_message"
 }
 
 func (p *ChatPanel) handleSend() tea.Cmd {
@@ -157,26 +266,59 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 		return nil
 	}
 
-	p.messages = append(p.messages, api.Message{
-		SenderID:  p.auth.UserID,
-		Username:  p.auth.Username,
-		Content:   content,
-		CreatedAt: time.Now(),
+	// FIX(8.4.1.b): выдаём трек-номер и кладём echo как pending.
+	p.localSeq++
+	localID := p.localSeq
+
+	p.messages = append(p.messages, chatMessage{
+		Message: api.Message{
+			SenderID:  p.auth.UserID,
+			Username:  p.auth.Username,
+			Content:   content,
+			CreatedAt: time.Now(),
+		},
+		localID: localID,
+		status:  statusPending,
 	})
 
 	p.input.SetValue("")
 
-	wsType := "channel_message"
-	if p.targetType == ChatTargetDirect {
-		wsType = "dm_message"
-	}
-
 	out := WSSendMsg{
-		Type:     wsType,
+		Type:     p.wsType(), // FIX(8.4.1.e): было инлайн-вычисление
 		TargetID: p.targetID,
 		Content:  content,
+		LocalID:  localID, // FIX(8.4.1.b)
 	}
 	return func() tea.Msg { return out }
+}
+
+// FIX(8.4.1.e): retryFailed переотправляет ВСЕ failed-сообщения разом.
+// Каждое возвращается в statusPending и переотправляется с тем же
+// localID — новый не выдаём, иначе WSSendOKMsg/WSSendFailedMsg не найдут
+// запись по localID. Порядок отправки через tea.Batch не гарантирован —
+// на сервере сообщения могут перемешаться (принятое ограничение, вариант I).
+func (p *ChatPanel) retryFailed() tea.Cmd {
+	var cmds []tea.Cmd
+	for i := range p.messages {
+		cm := &p.messages[i]
+		if cm.status != statusFailed {
+			continue
+		}
+		cm.status = statusPending
+		cm.sentAt = time.Time{} // pending его не читает, обнуляем для чистоты
+
+		out := WSSendMsg{
+			Type:     p.wsType(),
+			TargetID: p.targetID,
+			Content:  cm.Content,
+			LocalID:  cm.localID,
+		}
+		cmds = append(cmds, func() tea.Msg { return out })
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 func (p *ChatPanel) View(width, height int) string {
@@ -255,7 +397,8 @@ func (p *ChatPanel) renderMessages(width, height int) string {
 	return b.String()
 }
 
-func (p *ChatPanel) renderMessageLine(m api.Message) string {
+// FIX(8.4.1.b): рендер строки зависит от статуса доставки.
+func (p *ChatPanel) renderMessageLine(m chatMessage) string {
 	timeStr := styles.StyleFaint.Render(m.CreatedAt.Format("15:04"))
 
 	var nameStyle lipgloss.Style
@@ -267,7 +410,22 @@ func (p *ChatPanel) renderMessageLine(m api.Message) string {
 	name := nameStyle.Render(m.Username)
 	sep := styles.StyleFaint.Render(" | ")
 
-	return fmt.Sprintf("%s  %s%s%s", timeStr, name, sep, m.Content)
+	switch m.status {
+	case statusPending:
+		// серый текст + серое многоточие — "в пути"
+		content := styles.StyleFaint.Render(m.Content + " …")
+		return fmt.Sprintf("%s  %s%s%s", timeStr, name, sep, content)
+
+	case statusFailed:
+		// серый текст + красный крестик — глаз цепляется за ×,
+		// но текст остаётся читаемым
+		content := styles.StyleFaint.Render(m.Content)
+		mark := styles.StyleDanger.Render(" ×")
+		return fmt.Sprintf("%s  %s%s%s%s", timeStr, name, sep, content, mark)
+
+	default: // statusSent
+		return fmt.Sprintf("%s  %s%s%s", timeStr, name, sep, m.Content)
+	}
 }
 
 func chatErrText(err error) string {
