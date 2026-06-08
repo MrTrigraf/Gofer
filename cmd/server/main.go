@@ -63,6 +63,7 @@ func mustConnectDB(cfg *config.Config) *pgxpool.Pool {
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
 		os.Exit(1)
+
 	}
 	return pool
 }

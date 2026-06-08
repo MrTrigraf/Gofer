@@ -33,3 +33,4 @@ go.work.sum
 
 # Config with secrets
 config/config.yaml
+tmp/

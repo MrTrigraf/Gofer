@@ -27,8 +27,10 @@ const (
 	tabChannels
 )
 
-const chatAreaListReserve = 13
-const chatAreaListOffset = 3
+const (
+	chatAreaListReserve = 13
+	chatAreaListOffset  = 3
+)
 
 // === СООБЩЕНИЯ ===
 
@@ -490,11 +492,18 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		// Wheel-события перенаправляем во viewport списка (только в add-режиме).
-		if m.addMode && (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
-			var cmd tea.Cmd
-			m.addListVP, cmd = m.addListVP.Update(msg)
-			return m, cmd
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			if m.addMode {
+				var cmd tea.Cmd
+				m.addListVP, cmd = m.addListVP.Update(msg)
+				return m, cmd
+			}
+			if m.chat.HasTarget() {
+				var cmd tea.Cmd
+				m.chat, cmd = m.chat.Update(msg)
+				return m, cmd
+			}
+			return m, nil
 		}
 		if msg.Action != tea.MouseActionPress {
 			return m, nil
@@ -937,7 +946,8 @@ func (m *HomeModel) renderTabs(sbWidth int) string {
 	chStart := dmEnd + 1 + lipgloss.Width(sep)
 	chEnd := chStart + lipgloss.Width(chTab) - 1
 
-	m.hitboxes = append(m.hitboxes,
+	m.hitboxes = append(
+		m.hitboxes,
 		screen.Hitbox{X1: dmStart, Y1: m.originY, X2: dmEnd, Y2: m.originY, ID: "tab_direct"},
 		screen.Hitbox{X1: chStart, Y1: m.originY, X2: chEnd, Y2: m.originY, ID: "tab_channels"},
 	)
@@ -966,7 +976,7 @@ func (m *HomeModel) renderAddActions(sbWidth int) string {
 		actions = []action{
 			{label: "[+] create", id: "add_channel_create"},
 			{label: "[→] join", id: "add_channel_join"},
-			{label: "[🗑] delete", id: "add_channel_delete"},
+			{label: "[×] delete", id: "add_channel_delete"},
 		}
 	} else {
 		actions = []action{
@@ -1071,7 +1081,7 @@ func (m *HomeModel) renderDMsList(sbWidth int) string {
 func (m *HomeModel) renderAddButton(sbWidth int) string {
 	var label, hitboxID string
 	if m.addMode {
-		label = styles.StyleAccent.Render("[✕] BACK")
+		label = styles.StyleAccent.Render("[×] BACK")
 		hitboxID = "sidebar_back"
 	} else {
 		label = styles.StyleAccent.Render("[+] ADD")
@@ -1283,7 +1293,7 @@ func (m *HomeModel) renderAddDMsList(originX, originY int) string {
 		}
 		label := icon + name
 
-		action := styles.StyleAccent.Render("[✕] del")
+		action := styles.StyleAccent.Render("[×] del")
 
 		padWidth := 40 - lipgloss.Width(label)
 		if padWidth < 1 {

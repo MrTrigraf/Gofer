@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gofer/tui/api"
@@ -87,6 +88,14 @@ type ChatPanel struct {
 	localSeq int // FIX(8.4.1.b): счётчик localID для исходящих
 
 	input textinput.Model
+
+	// FIX(8.4.2.b): viewport как «окно» над полным списком сообщений.
+	// stickToBottom — режим автоскролла: true пока юзер у дна, false
+	// после ручной прокрутки вверх. При новых сообщениях GotoBottom
+	// вызывается только если флаг true (не дёргаем юзера, читающего
+	// историю).
+	vp            viewport.Model
+	stickToBottom bool
 }
 
 func NewChatPanel(client *api.Client, state auth.AuthState) *ChatPanel {
@@ -94,9 +103,11 @@ func NewChatPanel(client *api.Client, state auth.AuthState) *ChatPanel {
 	in.Placeholder = "Type a message and press Enter..."
 	in.CharLimit = inputCharLimit
 	return &ChatPanel{
-		api:   client,
-		auth:  state,
-		input: in,
+		api:           client,
+		auth:          state,
+		input:         in,
+		vp:            viewport.New(0, 0), // FIX(8.4.2.b): размеры выставит View
+		stickToBottom: true,               // FIX(8.4.2.b)
 	}
 }
 
@@ -119,6 +130,9 @@ func (p *ChatPanel) SetTarget(targetType, targetID, displayName string) tea.Cmd 
 	p.input.SetValue("")
 	p.input.Focus()
 
+	// FIX(8.4.2.b): новый чат — всегда стартуем у дна (увидим последние).
+	p.stickToBottom = true
+
 	p.reqSeq++
 	p.activeReq = p.reqSeq
 	reqID := p.activeReq
@@ -137,6 +151,7 @@ func (p *ChatPanel) Clear() {
 	p.input.Blur()
 	p.reqSeq++
 	p.activeReq = p.reqSeq
+	p.stickToBottom = true // FIX(8.4.2.b)
 }
 
 func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
@@ -228,6 +243,9 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// FIX(8.4.1.e): Enter — отправка нового, Ctrl+R — ретрай failed.
+		// FIX(8.4.2.b): PgUp/PgDn — скролл viewport (до textinput, иначе
+		// textinput их съест без эффекта). Home/End НЕ перехватываем —
+		// они остаются за курсором в поле ввода (стандартное поведение).
 		// Оба действия только при сфокусированном поле ввода — для
 		// единообразия и чтобы ctrl+r не срабатывал вне чата.
 		if p.input.Focused() {
@@ -236,7 +254,22 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 				return p, p.handleSend()
 			case m.String() == "ctrl+r":
 				return p, p.retryFailed()
+			case m.Type == tea.KeyPgUp, m.Type == tea.KeyPgDown:
+				var cmd tea.Cmd
+				p.vp, cmd = p.vp.Update(msg)
+				p.stickToBottom = p.vp.AtBottom() // FIX(8.4.2.b)
+				return p, cmd
 			}
+		}
+
+	// FIX(8.4.2.b): колесо мыши → viewport. Хост (home.go) маршрутизирует
+	// wheel-события сюда, когда чат открыт и не activated addMode.
+	case tea.MouseMsg:
+		if m.Button == tea.MouseButtonWheelUp || m.Button == tea.MouseButtonWheelDown {
+			var cmd tea.Cmd
+			p.vp, cmd = p.vp.Update(msg)
+			p.stickToBottom = p.vp.AtBottom()
+			return p, cmd
 		}
 	}
 	if p.input.Focused() {
@@ -376,36 +409,45 @@ func (p *ChatPanel) renderBody(width, height int) string {
 	}
 }
 
+// FIX(8.4.2.b): рендерим ВСЕ сообщения в content viewport'а, viewport
+// сам показывает кусок с прокруткой. Старое обрезание по высоте убрано:
+// история теперь полностью доступна через PgUp/PgDn/колесо мыши.
+//
+// SetContent + при stickToBottom — GotoBottom вызываются каждый кадр.
+// Для 50 сообщений это микросекунды; если станет много, добавим dirty-флаг.
+//
+// lipgloss.Height в конце нужен потому, что viewport.View() возвращает
+// до Height строк (может меньше, если контент короче окна). Без обёртки
+// поле ввода всплыло бы вверх при коротком чате.
 func (p *ChatPanel) renderMessages(width, height int) string {
-	visible := p.messages
-	if len(visible) > height {
-		visible = visible[len(visible)-height:]
-	}
+	p.vp.Width = width
+	p.vp.Height = height
 
 	var b strings.Builder
-	for i, msg := range visible {
+	for i, msg := range p.messages {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
 		b.WriteString(p.renderMessageLine(msg))
 	}
-
-	missing := height - len(visible)
-	for i := 0; i < missing; i++ {
-		b.WriteByte('\n')
+	p.vp.SetContent(b.String())
+	if p.stickToBottom {
+		p.vp.GotoBottom()
 	}
-	return b.String()
+
+	return lipgloss.NewStyle().Height(height).Render(p.vp.View())
 }
 
 // FIX(8.4.1.b): рендер строки зависит от статуса доставки.
 func (p *ChatPanel) renderMessageLine(m chatMessage) string {
 	timeStr := styles.StyleFaint.Render(m.CreatedAt.Format("15:04"))
 
+	// FIX(8.4.2): ник своего сообщения красим иначе, чем чужие.
 	var nameStyle lipgloss.Style
 	if m.SenderID == p.auth.UserID {
-		nameStyle = styles.StyleAccent
+		nameStyle = styles.StyleMessageSenderSelf
 	} else {
-		nameStyle = styles.StyleAccent
+		nameStyle = styles.StyleMessageSenderOther
 	}
 	name := nameStyle.Render(m.Username)
 	sep := styles.StyleFaint.Render(" | ")

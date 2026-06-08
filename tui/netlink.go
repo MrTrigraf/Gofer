@@ -39,3 +39,6 @@ func scheduleNextPing() tea.Cmd {
 		return netlinkPingMsg{}
 	})
 }
+
+// TODO: проверить что todo-comments работает
+// FIXME: этот блок надо переписать

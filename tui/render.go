@@ -48,7 +48,7 @@ func (m Model) renderApp() string {
 func (m Model) renderHeader(width int) string {
 	left := styles.StyleTitle.Render("◈ GOFER")
 	netlink := m.renderNetlinkIndicator()
-	right := styles.StyleButtonClose.Render("[✕]")
+	right := styles.StyleButtonClose.Render("[×]")
 
 	contentWidth := width - 2 // Padding(0, 1)
 

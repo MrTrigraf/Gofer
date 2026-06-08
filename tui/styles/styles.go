@@ -28,30 +28,6 @@ const (
 	ColorMuted      lipgloss.Color = "#727169" // fujiGray — приглушённый
 )
 
-// // Пастельная мечта: мягкие, ненапрягающие глаза цвета
-// const (
-// 	ColorBackground lipgloss.Color = "#2D2F36" // тёмный серо-фиолетовый
-// 	ColorText       lipgloss.Color = "#F9F6EE" // слоновая кость
-// 	ColorPrimary    lipgloss.Color = "#B4C5E4" // бледно-голубой
-// 	ColorSecondary  lipgloss.Color = "#D5B9B9" // нежно-розовый
-// 	ColorAccent     lipgloss.Color = "#C5E0B4" // мятно-зелёный
-// 	ColorDanger     lipgloss.Color = "#E2A9A9" // бледный красный
-// 	ColorSuccess    lipgloss.Color = "#B4E0C5" // пастельный зелёный
-// 	ColorMuted      lipgloss.Color = "#6A6D7A" // серо-лиловый
-// )
-
-// // Nordic: холодная, спокойная гамма в сине-серых тонах, вдохновлённая скандинавскими пейзажами
-// const (
-// 	ColorBackground lipgloss.Color = "#2E3440" // тёмный серо-синий
-// 	ColorText       lipgloss.Color = "#E5E9F0" // снежно-белый
-// 	ColorPrimary    lipgloss.Color = "#88C0D0" // ледяной голубой
-// 	ColorSecondary  lipgloss.Color = "#81A1C1" // приглушённый синий
-// 	ColorAccent     lipgloss.Color = "#B48EAD" // вересковый
-// 	ColorDanger     lipgloss.Color = "#BF616A" // красновато-лососевый
-// 	ColorSuccess    lipgloss.Color = "#A3BE8C" // бледно-зелёный мха
-// 	ColorMuted      lipgloss.Color = "#4C566A" // серо-стальной
-// )
-
 // === ТЕКСТОВЫЕ СТИЛИ ===
 var (
 	// заголовки и логотип "◈ GOFER".
@@ -206,7 +182,12 @@ var (
 			Foreground(ColorMuted)
 
 	// ник отправителя сообщения.
-	StyleMessageSender = lipgloss.NewStyle().
+	StyleMessageSenderSelf = lipgloss.NewStyle().
+				Foreground(ColorSecondary).
+				Bold(true)
+
+	// ник чужого сообщения.
+	StyleMessageSenderOther = lipgloss.NewStyle().
 				Foreground(ColorAccent).
 				Bold(true)
 
