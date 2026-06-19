@@ -24,6 +24,10 @@ type MockMessageRepo struct {
 	mock.Mock
 }
 
+type MockPublisher struct {
+	mock.Mock
+}
+
 func (m *MockUserRepo) Create(ctx context.Context, user domain.User) (domain.User, error) {
 	args := m.Called(ctx, user)
 	return args.Get(0).(domain.User), args.Error(1)
@@ -99,11 +103,16 @@ func (m *MockMessageRepo) GetByDirectChatIDWithUsernames(ctx context.Context, di
 	return args.Get(0).([]dto.MessageResponse), args.Error(1)
 }
 
+func (m *MockPublisher) NotifyDMCreated(recipientID string) {
+	m.Called(recipientID)
+}
+
 func TestStartDM_Success(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	userRepo.On("FindByID", mock.Anything, "user-2").
 		Return(domain.User{ID: "user-2"}, nil)
@@ -113,6 +122,7 @@ func TestStartDM_Success(t *testing.T) {
 
 	directRepo.On("Create", mock.Anything, mock.AnythingOfType("domain.DirectChat")).
 		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
+	publisher.On("NotifyDMCreated", "user-2").Return()
 
 	dm, err := uc.StartDM(context.Background(), "user-1", "user-2")
 
@@ -124,7 +134,8 @@ func TestStartDM_AlreadyExists(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	userRepo.On("FindByID", mock.Anything, "user-2").
 		Return(domain.User{ID: "user-2"}, nil)
@@ -136,13 +147,15 @@ func TestStartDM_AlreadyExists(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrDirectChatAlreadyExists)
+	publisher.AssertNotCalled(t, "NotifyDMCreated", mock.Anything)
 }
 
 func TestStartDM_TargetUserNotFound(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	userRepo.On("FindByID", mock.Anything, "user-missing").
 		Return(domain.User{}, domain.ErrNotFound)
@@ -153,13 +166,37 @@ func TestStartDM_TargetUserNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrUserNotFound)
 	directRepo.AssertNotCalled(t, "FindByUsers", mock.Anything, mock.Anything, mock.Anything)
 	directRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	publisher.AssertNotCalled(t, "NotifyDMCreated", mock.Anything)
+}
+
+func TestStartDM_NotifiesRecipient(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	directRepo := &MockDirectRepo{}
+	messageRepo := &MockMessageRepo{}
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
+
+	userRepo.On("FindByID", mock.Anything, "user-2").
+		Return(domain.User{ID: "user-2"}, nil)
+	directRepo.On("FindByUsers", mock.Anything, "user-1", "user-2").
+		Return(domain.DirectChat{}, domain.ErrNotFound)
+	directRepo.On("Create", mock.Anything, mock.AnythingOfType("domain.DirectChat")).
+		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
+	publisher.On("NotifyDMCreated", "user-2").Return()
+
+	_, err := uc.StartDM(context.Background(), "user-1", "user-2")
+
+	require.NoError(t, err)
+	publisher.AssertCalled(t, "NotifyDMCreated", "user-2")
+	publisher.AssertNotCalled(t, "NotifyDMCreated", "user-1")
 }
 
 func TestListDMs_Success(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	directRepo.On("FindByUserIDWithUsernames", mock.Anything, "user-1").
 		Return([]dto.DirectChatResponse{
@@ -179,7 +216,8 @@ func TestDeleteDM_Success(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	directRepo.On("FindByID", mock.Anything, "dm-1").
 		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
@@ -197,7 +235,8 @@ func TestDeleteDM_NotParticipant(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	directRepo.On("FindByID", mock.Anything, "dm-1").
 		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
@@ -213,7 +252,8 @@ func TestDeleteDM_NotFound(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	directRepo.On("FindByID", mock.Anything, "dm-missing").
 		Return(domain.DirectChat{}, domain.ErrNotFound)
@@ -229,7 +269,8 @@ func TestGetDMHistory_Success(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	directRepo.On("FindByID", mock.Anything, "dm-1").
 		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
@@ -249,7 +290,8 @@ func TestGetDMHistory_NotParticipant(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	directRepo.On("FindByID", mock.Anything, "dm-1").
 		Return(domain.DirectChat{ID: "dm-1", UserID1: "user-1", UserID2: "user-2"}, nil)
@@ -266,7 +308,8 @@ func TestGetDMHistory_NotFound(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
 	messageRepo := &MockMessageRepo{}
-	uc := New(userRepo, directRepo, messageRepo)
+	publisher := &MockPublisher{}
+	uc := New(userRepo, directRepo, messageRepo, publisher)
 
 	directRepo.On("FindByID", mock.Anything, "dm-missing").
 		Return(domain.DirectChat{}, domain.ErrNotFound)

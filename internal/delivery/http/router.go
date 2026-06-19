@@ -27,19 +27,19 @@ func NewRouter(pool *pgxpool.Pool, cfg *config.Config) (*Router, *websocket.Hub)
 	messageRepo := postgres.NewMessageRepo(pool)
 	directRepo := postgres.NewDirectRepo(pool)
 
-	// usecase'ы
+	// инфраструктура
 	pwdHasher := hasher.New()
 	tokenSvc := jwt.NewTokenService(&cfg.JWT)
+	hub := websocket.NewHub(channelRepo, messageRepo, directRepo)
+
+	// usecase'ы
 	authUC := auth.New(userRepo, pwdHasher, tokenSvc)
 	channelUC := channel.New(userRepo, channelRepo, messageRepo)
-	directUC := direct.New(userRepo, directRepo, messageRepo)
+	directUC := direct.New(userRepo, directRepo, messageRepo, hub)
 	userUC := user.New(userRepo)
 
-	// websocket
-	hub := websocket.NewHub(channelRepo, messageRepo, directRepo)
+	// хендлеры
 	wsHandler := websocket.NewHandler(hub, tokenSvc)
-
-	// middleware и хендлеры
 	jwtMW := middleware.NewJWTMiddleware(tokenSvc)
 	authHandler := NewAuthHandler(authUC)
 	channelHandler := NewChannelHandler(channelUC)

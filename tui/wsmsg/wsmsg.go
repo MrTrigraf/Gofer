@@ -9,3 +9,5 @@ type IncomingMsg struct {
 }
 
 type DisconnectedMsg struct{}
+
+type DMCreatedMsg struct{}

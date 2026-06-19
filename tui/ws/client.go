@@ -34,7 +34,10 @@ type EventKind int
 const (
 	EventMessage EventKind = iota + 1
 	EventDisconnected
+	EventDMCreated
 )
+
+const msgTypeDMCreated = "dm_created"
 
 type Event struct {
 	Kind    EventKind
@@ -52,14 +55,8 @@ const (
 	eventsBufferSize = 64
 	handshakeTimeout = 10 * time.Second
 	writeWait        = 5 * time.Second
-
-	// FIX(8.4.1.a): WS-heartbeat на стороне клиента.
-	// pingPeriod — как часто шлём Ping серверу.
-	// pongWait — сколько ждём Pong, прежде чем считать соединение мёртвым.
-	// pongWait кратен pingPeriod (3 периода) — запас на сетевой джиттер,
-	// чтобы единичная задержка Pong не вызвала ложный обрыв.
-	pingPeriod = 3 * time.Second
-	pongWait   = 9 * time.Second
+	pingPeriod       = 3 * time.Second
+	pongWait         = 9 * time.Second
 )
 
 type Client struct {
@@ -93,7 +90,7 @@ func Dial(ctx context.Context, url, token string) (*Client, error) {
 	}
 	go c.readLoop()
 	go c.writeLoop()
-	go c.pingLoop() // FIX(8.4.1.a): запускаем heartbeat-горутину
+	go c.pingLoop()
 	return c, nil
 }
 
@@ -149,13 +146,6 @@ func (c *Client) readLoop() {
 		c.shutdown()
 	}()
 
-	// FIX(8.4.1.a): вооружаем ReadMessage таймаутом.
-	// Без read deadline ReadMessage висит вечно при "тихом" обрыве сети
-	// (TCP не закрылся, данные не ходят). Теперь:
-	//  - ставим дедлайн pongWait вперёд;
-	//  - PongHandler двигает дедлайн при каждом ответе сервера на наш Ping;
-	//  - если за pongWait не пришло ни Pong, ни сообщения — ReadMessage
-	//    падает по таймауту, readLoop выходит, наверх летит EventDisconnected.
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -167,16 +157,20 @@ func (c *Client) readLoop() {
 		if err != nil {
 			return
 		}
-		// FIX(8.4.1.a): обычный трафик — тоже признак живости соединения,
-		// продлеваем дедлайн после каждого успешно прочитанного сообщения.
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 
 		var in Incoming
 		if err := json.Unmarshal(raw, &in); err != nil {
 			continue
 		}
+
+		ev := Event{Kind: EventMessage, Message: in}
+		if in.Type == msgTypeDMCreated {
+			ev = Event{Kind: EventDMCreated}
+		}
+
 		select {
-		case c.events <- Event{Kind: EventMessage, Message: in}:
+		case c.events <- ev:
 		case <-c.done:
 			return
 		}
@@ -198,14 +192,6 @@ func (c *Client) writeLoop() {
 	}
 }
 
-// FIX(8.4.1.a): pingLoop — клиентский heartbeat.
-// Раз в pingPeriod шлёт серверу control-кадр Ping. Сервер на него
-// автоматически отвечает Pong (стандартное поведение gorilla), и PongHandler
-// в readLoop продлевает read deadline. Если WriteControl провалился —
-// соединение уже мертвое, инициируем shutdown немедленно.
-//
-// WriteControl безопасно вызывать конкурентно с WriteMessage из writeLoop —
-// это явно разрешено gorilla/websocket для control-кадров.
 func (c *Client) pingLoop() {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()

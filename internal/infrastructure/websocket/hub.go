@@ -14,6 +14,8 @@ import (
 
 const dbTimeout = 5 * time.Second
 
+const pushBufferSize = 256
+
 type IncomingMessage struct {
 	client *Client
 	data   []byte
@@ -36,9 +38,19 @@ type outgoingWSMessage struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type outgoingEvent struct {
+	Type string `json:"type"`
+}
+
+type pushMsg struct {
+	userID  string
+	payload []byte
+}
+
 const (
-	msgTypeChannel = "channel_message"
-	msgTypeDM      = "dm_message"
+	msgTypeChannel   = "channel_message"
+	msgTypeDM        = "dm_message"
+	msgTypeDMCreated = "dm_created"
 )
 
 type Hub struct {
@@ -46,6 +58,7 @@ type Hub struct {
 	broadcast   chan IncomingMessage
 	register    chan *Client
 	unregister  chan *Client
+	push        chan pushMsg
 	channelRepo usecase.ChannelRepository
 	messageRepo usecase.MessageRepository
 	directRepo  usecase.DirectChatRepository
@@ -61,6 +74,7 @@ func NewHub(
 		broadcast:   make(chan IncomingMessage, 256),
 		register:    make(chan *Client),
 		unregister:  make(chan *Client),
+		push:        make(chan pushMsg, pushBufferSize),
 		channelRepo: channelRepo,
 		messageRepo: messageRepo,
 		directRepo:  directRepo,
@@ -89,7 +103,24 @@ func (h *Hub) Run(ctx context.Context) {
 
 		case msg := <-h.broadcast:
 			h.handleBroadcast(ctx, msg)
+
+		case p := <-h.push:
+			h.deliver(p.userID, p.payload)
 		}
+	}
+}
+
+func (h *Hub) NotifyDMCreated(recipientID string) {
+	payload, err := json.Marshal(outgoingEvent{Type: msgTypeDMCreated})
+	if err != nil {
+		slog.Error("ws: marshal dm_created failed", "err", err)
+		return
+	}
+	select {
+	case h.push <- pushMsg{userID: recipientID, payload: payload}:
+	default:
+		slog.Warn("ws: push buffer full, dropping",
+			"user", recipientID, "event", msgTypeDMCreated)
 	}
 }
 

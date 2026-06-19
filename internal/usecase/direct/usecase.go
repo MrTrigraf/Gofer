@@ -15,13 +15,15 @@ type DirectUseCase struct {
 	userRepo    usecase.UserRepository
 	directRepo  usecase.DirectChatRepository
 	messageRepo usecase.MessageRepository
+	publisher   usecase.Publisher
 }
 
-func New(userRepo usecase.UserRepository, directRepo usecase.DirectChatRepository, messageRepo usecase.MessageRepository) *DirectUseCase {
+func New(userRepo usecase.UserRepository, directRepo usecase.DirectChatRepository, messageRepo usecase.MessageRepository, publisher usecase.Publisher) *DirectUseCase {
 	return &DirectUseCase{
 		userRepo:    userRepo,
 		directRepo:  directRepo,
 		messageRepo: messageRepo,
+		publisher:   publisher,
 	}
 }
 
@@ -51,6 +53,10 @@ func (uc *DirectUseCase) StartDM(ctx context.Context, user1ID, user2ID string) (
 	direct, err = uc.directRepo.Create(ctx, direct)
 	if err != nil {
 		return domain.DirectChat{}, fmt.Errorf("start dm: %w", err)
+	}
+
+	if uc.publisher != nil {
+		uc.publisher.NotifyDMCreated(user2ID)
 	}
 
 	return direct, nil

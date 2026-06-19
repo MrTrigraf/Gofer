@@ -22,13 +22,8 @@ type wsDialFailedMsg struct {
 	err error
 }
 
-// FIX(8.4.1.d): wsReconnectMsg — тик "пора пробовать переподключиться".
-// Приходит после паузы wsReconnectDelay и запускает повторный dialWSCmd.
 type wsReconnectMsg struct{}
 
-// FIX(8.4.1.d): пауза между попытками переподключения WS.
-// Фиксированный backoff: провал dial -> ждём -> пробуем снова.
-// 3с — достаточно, чтобы не зашумлять лог, и достаточно быстро для юзера.
 const wsReconnectDelay = 3 * time.Second
 
 func dialWSCmd(url, token string) tea.Cmd {
@@ -41,8 +36,6 @@ func dialWSCmd(url, token string) tea.Cmd {
 	}
 }
 
-// FIX(8.4.1.d): scheduleReconnect — "через wsReconnectDelay пришли
-// wsReconnectMsg". По аналогии со scheduleNextPing в netlink.go.
 func scheduleReconnect() tea.Cmd {
 	return tea.Tick(wsReconnectDelay, func(time.Time) tea.Msg {
 		return wsReconnectMsg{}
@@ -60,6 +53,8 @@ func waitWSCmd(client *ws.Client) tea.Cmd {
 			return wsmsg.IncomingMsg{Message: ev.Message}
 		case ws.EventDisconnected:
 			return wsmsg.DisconnectedMsg{}
+		case ws.EventDMCreated:
+			return wsmsg.DMCreatedMsg{}
 		}
 		return nil
 	}
@@ -95,18 +90,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Info("WS connected") // TEST(8.4.1.a)
 		return m, waitWSCmd(m.ws)
 
-	// FIX(8.4.1.d): dial провалился (сервер ещё лежит) — не сдаёмся,
-	// планируем следующую попытку через wsReconnectDelay.
 	case wsDialFailedMsg:
 		slog.Warn("WS dial failed, will retry", "err", msg.err)
 		return m, scheduleReconnect()
 
-	// FIX(8.4.1.d): тик реконнекта — пробуем дозвониться снова.
-	// Токен берём из m.auth (логина нет — он был сохранён при
-	// auth.AuthenticatedMsg).
-	// TODO(8.4.x): при долгом простое access-токен (15 мин) протухает —
-	// dial вернёт ErrUnauthorized и реконнект будет крутиться впустую.
-	// Правильное решение — refresh-токен флоу, вне рамок 8.4.1.
 	case wsReconnectMsg:
 		slog.Info("WS reconnecting...")
 		return m, dialWSCmd(m.apiClient.WSURL(), m.auth.AccessToken)
@@ -116,11 +103,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, cmd = m.current.Update(msg)
 		return m, tea.Batch(cmd, waitWSCmd(m.ws))
 
-	// FIX(8.4.1.d): обрыв WS — сообщение пробрасываем в m.current
-	// (ChatPanel перекрасит сообщения в failed, вариант X) И запускаем
-	// цикл реконнекта.
+	case wsmsg.DMCreatedMsg:
+		var cmd tea.Cmd
+		m.current, cmd = m.current.Update(msg)
+		return m, tea.Batch(cmd, waitWSCmd(m.ws))
+
 	case wsmsg.DisconnectedMsg:
-		slog.Warn("WS disconnected") // TEST(8.4.1.a)
+		slog.Warn("WS disconnected")
 		m.ws = nil
 		var cmd tea.Cmd
 		m.current, cmd = m.current.Update(msg)

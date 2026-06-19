@@ -54,3 +54,7 @@ type TokenService interface {
 	ParseAccessToken(tokenString string) (*jwt.AccessClaims, error)
 	ParseRefreshToken(tokenString string) (*jwt.RefreshClaims, error)
 }
+
+type Publisher interface {
+	NotifyDMCreated(recipientID string)
+}
