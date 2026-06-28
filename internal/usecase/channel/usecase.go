@@ -44,7 +44,15 @@ func (uc *ChannelUseCase) CreateChannel(ctx context.Context, name string, create
 }
 
 func (uc *ChannelUseCase) JoinChannel(ctx context.Context, channelID string, userID string) error {
-	_, err := uc.channelRepo.FindByID(ctx, channelID)
+	isMember, err := uc.channelRepo.IsMember(ctx, channelID, userID)
+	if err != nil {
+		return fmt.Errorf("join channel: check membership: %w", err)
+	}
+	if isMember {
+		return domain.ErrAlreadyMember
+	}
+
+	_, err = uc.channelRepo.FindByID(ctx, channelID)
 	if err != nil {
 		return domain.ErrGroupNotFound
 	}

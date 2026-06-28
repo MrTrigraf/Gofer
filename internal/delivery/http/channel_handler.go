@@ -13,6 +13,7 @@ import (
 	"github.com/gofer/internal/dto"
 	"github.com/gofer/internal/usecase/channel"
 	"github.com/gofer/pkg/httputil"
+	"github.com/google/uuid"
 )
 
 type CreateChannelRequest struct {
@@ -64,6 +65,11 @@ func (h *ChannelHandler) Join(w http.ResponseWriter, r *http.Request) {
 	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	channelID := r.PathValue("id")
 
+	if _, err := uuid.Parse(channelID); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
 	err := h.channelUC.JoinChannel(r.Context(), channelID, userCtx.UserID)
 	if err != nil {
 		if errors.Is(err, domain.ErrGroupNotFound) {
@@ -72,6 +78,10 @@ func (h *ChannelHandler) Join(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, domain.ErrUserNotFound) {
 			httputil.WriteError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		if errors.Is(err, domain.ErrAlreadyMember) {
+			httputil.WriteError(w, http.StatusConflict, "already a member of this channel")
 			return
 		}
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
@@ -84,6 +94,11 @@ func (h *ChannelHandler) Join(w http.ResponseWriter, r *http.Request) {
 func (h *ChannelHandler) History(w http.ResponseWriter, r *http.Request) {
 	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	channelID := r.PathValue("id")
+
+	if _, err := uuid.Parse(channelID); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
 
 	limitStr := r.URL.Query().Get("limit")
 	beforeStr := r.URL.Query().Get("before")
@@ -124,6 +139,11 @@ func (h *ChannelHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	channelID := r.PathValue("id")
 
+	if _, err := uuid.Parse(channelID); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
 	err := h.channelUC.DeleteChannel(r.Context(), channelID, userCtx.UserID)
 	if err != nil {
 		if errors.Is(err, domain.ErrGroupNotFound) {
@@ -144,6 +164,11 @@ func (h *ChannelHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *ChannelHandler) Leave(w http.ResponseWriter, r *http.Request) {
 	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	channelID := r.PathValue("id")
+
+	if _, err := uuid.Parse(channelID); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
 
 	err := h.channelUC.LeaveChannel(r.Context(), channelID, userCtx.UserID)
 	if err != nil {

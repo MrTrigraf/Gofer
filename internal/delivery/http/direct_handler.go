@@ -13,6 +13,7 @@ import (
 	"github.com/gofer/internal/dto"
 	"github.com/gofer/internal/usecase/direct"
 	"github.com/gofer/pkg/httputil"
+	"github.com/google/uuid"
 )
 
 type DirectHandler struct {
@@ -26,6 +27,11 @@ func NewDirectHandler(directUC *direct.DirectUseCase) *DirectHandler {
 func (h *DirectHandler) Start(w http.ResponseWriter, r *http.Request) {
 	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	targetUserID := r.PathValue("user_id")
+
+	if _, err := uuid.Parse(targetUserID); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
 
 	dm, err := h.directUC.StartDM(r.Context(), userCtx.UserID, targetUserID)
 	if err != nil {
@@ -49,6 +55,11 @@ func (h *DirectHandler) Start(w http.ResponseWriter, r *http.Request) {
 func (h *DirectHandler) History(w http.ResponseWriter, r *http.Request) {
 	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	directID := r.PathValue("id")
+
+	if _, err := uuid.Parse(directID); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid direct chat id")
+		return
+	}
 
 	limitStr := r.URL.Query().Get("limit")
 	beforeStr := r.URL.Query().Get("before")
@@ -105,6 +116,11 @@ func (h *DirectHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *DirectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userCtx := r.Context().Value(middleware.UserIDKey).(*middleware.UserContext)
 	chatID := r.PathValue("id")
+
+	if _, err := uuid.Parse(chatID); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid direct chat id")
+		return
+	}
 
 	err := h.directUC.DeleteDM(r.Context(), chatID, userCtx.UserID)
 	if err != nil {

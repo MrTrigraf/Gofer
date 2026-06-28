@@ -133,6 +133,9 @@ func TestJoinChannel_Success(t *testing.T) {
 	messageRepo := &MockMessageRepo{}
 	uc := New(userRepo, channelRepo, messageRepo)
 
+	channelRepo.On("IsMember", mock.Anything, "ch-1", "user-1").
+		Return(false, nil)
+
 	channelRepo.On("FindByID", mock.Anything, "ch-1").
 		Return(domain.Channel{ID: "ch-1", Name: "general"}, nil)
 
@@ -145,6 +148,25 @@ func TestJoinChannel_Success(t *testing.T) {
 	err := uc.JoinChannel(context.Background(), "ch-1", "user-1")
 
 	require.NoError(t, err)
+}
+
+func TestJoinChannel_AlreadyMember(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	channelRepo.On("IsMember", mock.Anything, "ch-1", "user-1").
+		Return(true, nil)
+
+	err := uc.JoinChannel(context.Background(), "ch-1", "user-1")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrAlreadyMember)
+
+	channelRepo.AssertNotCalled(t, "FindByID", mock.Anything, mock.Anything)
+	userRepo.AssertNotCalled(t, "FindByID", mock.Anything, mock.Anything)
+	channelRepo.AssertNotCalled(t, "AddMember", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestListChannels_Success(t *testing.T) {
