@@ -157,6 +157,7 @@ func (m *HomeModel) Init() tea.Cmd {
 	return tea.Batch(
 		loadChannelsCmd(m.apiClient),
 		loadDMsCmd(m.apiClient),
+		clipboard.CheckCmd(),
 	)
 }
 
@@ -275,7 +276,7 @@ func startDMCmd(client *api.Client, userID string) tea.Cmd {
 // === UPDATE ===
 
 func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
-	// Если активен попап — он ест все события, пока жив.
+	// Если активен попап — он перехватывает ВВОД, пока жив.
 	if m.popup != nil {
 		// Confirm-результат
 		if res, ok := msg.(popup.ResultMsg); ok {
@@ -287,9 +288,21 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 			m.popup = nil
 			return m, m.handleFormResult(res)
 		}
-		updated, cmd := m.popup.Update(msg)
-		m.popup = updated
-		return m, cmd
+		switch msg.(type) {
+		case ChannelsLoadedMsg, ChannelsLoadErrorMsg,
+			DMsLoadedMsg, DMsLoadErrorMsg,
+			CreateChannelDoneMsg, CreateChannelErrorMsg,
+			JoinChannelDoneMsg, JoinChannelErrorMsg,
+			StartDMDoneMsg, StartDMErrorMsg,
+			LeaveDoneMsg, LeaveErrorMsg,
+			DeleteDoneMsg, DeleteErrorMsg,
+			DeleteDMDoneMsg, DeleteDMErrorMsg:
+			// фоновый ответ сервера — падаем в основной switch ниже
+		default:
+			updated, cmd := m.popup.Update(msg)
+			m.popup = updated
+			return m, cmd
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -399,7 +412,6 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		return m, nil
 
 	// === КЛИПБОРД ===
-
 	case clipboard.CopiedMsg:
 		m.copiedTarget = msg.Target
 		return m, clipboard.ClearAfterTimeout(msg.Target)
@@ -411,6 +423,13 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 			m.copiedTarget = ""
 		}
 		return m, nil
+	case clipboard.UnavailableMsg:
+		m.popup = popup.NewWarning(
+			"clipboard_unavailable",
+			"Clipboard unavailable",
+			"Copying is disabled on this system.\n\nInstall xclip, xsel or wl-copy to enable it.",
+		)
+		return m, m.popup.Init()
 
 	// === ВВОД ===
 
