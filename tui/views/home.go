@@ -1127,7 +1127,7 @@ func (m *HomeModel) renderAddButton(sbWidth int) string {
 }
 
 func (m *HomeModel) renderChatArea() string {
-	chatW := m.width - styles.SidebarWidth
+	chatW := m.width - styles.SidebarWidth - 1
 	chatH := m.height
 
 	if m.addMode {

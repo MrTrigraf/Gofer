@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -24,16 +25,12 @@ const (
 )
 
 const historyLoadLimit = 50
-
 const inputCharLimit = 2000
-
-// FIX(8.4.1.b): окно "подозрительных" sent-сообщений.
-// При обрыве WS все наши исходящие, ставшие sent за последние
-// recentSentWindow, перекрашиваются в failed (вариант X): они могли
-// уйти в мёртвый TCP-буфер и не дойти до сервера.
 const recentSentWindow = 10 * time.Second
+const minContentWidth = 8
+const maxInputHeight = 3
+const inputPrefixWidth = 2
 
-// FIX(8.4.1.b): статус доставки нашего исходящего сообщения.
 type msgStatus int
 
 const (
@@ -42,9 +39,6 @@ const (
 	statusFailed                   // доставка провалилась
 )
 
-// FIX(8.4.1.b): chatMessage — api.Message + UI-метаданные о доставке.
-// api.Message не трогаем: это DTO транспортного слоя, статус — чисто
-// UI-понятие, ему здесь не место. Обёртка живёт только внутри views.
 type chatMessage struct {
 	api.Message
 	localID int       // трек-номер нашего исходящего; 0 = чужое/историческое
@@ -56,10 +50,9 @@ type WSSendMsg struct {
 	Type     string
 	TargetID string
 	Content  string
-	LocalID  int // FIX(8.4.1.b): трек-номер для последующего OK/Failed
+	LocalID  int
 }
 
-// FIX(8.4.1.b): результаты отправки, приходят из update.go.
 // WSSendOKMsg — Send() успешно положил сообщение в WS-буфер.
 type WSSendOKMsg struct {
 	LocalID int
@@ -78,36 +71,60 @@ type ChatPanel struct {
 	targetID    string
 	displayName string
 
-	messages []chatMessage // FIX(8.4.1.b): было []api.Message
+	messages []chatMessage
 	loading  bool
 	loadErr  error
 
 	reqSeq    int
 	activeReq int
 
-	localSeq int // FIX(8.4.1.b): счётчик localID для исходящих
+	localSeq int
 
-	input textinput.Model
+	input textarea.Model
 
-	// FIX(8.4.2.b): viewport как «окно» над полным списком сообщений.
-	// stickToBottom — режим автоскролла: true пока юзер у дна, false
-	// после ручной прокрутки вверх. При новых сообщениях GotoBottom
-	// вызывается только если флаг true (не дёргаем юзера, читающего
-	// историю).
 	vp            viewport.Model
 	stickToBottom bool
 }
 
 func NewChatPanel(client *api.Client, state auth.AuthState) *ChatPanel {
-	in := textinput.New()
-	in.Placeholder = "Type a message and press Enter..."
+	in := textarea.New()
+	in.Placeholder = "Type a message, Enter to send (Alt+Enter — newline)"
 	in.CharLimit = inputCharLimit
+	in.ShowLineNumbers = false
+	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	in.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	in.FocusedStyle.Text = styles.StyleMessageText
+	in.BlurredStyle.Text = styles.StyleMessageText
+	in.FocusedStyle.Placeholder = styles.StyleFaint
+	in.BlurredStyle.Placeholder = styles.StyleFaint
+	in.Prompt = "" // свой prefix "> " рисуем в renderInput
+	in.SetHeight(maxInputHeight)
+	in.KeyMap.LinePrevious = key.NewBinding(
+		key.WithKeys("ctrl+up", "ctrl+p"),
+		key.WithHelp("ctrl+↑", "line up"),
+	)
+	in.KeyMap.LineNext = key.NewBinding(
+		key.WithKeys("ctrl+down", "ctrl+n"),
+		key.WithHelp("ctrl+↓", "line down"),
+	)
+	in.KeyMap.CharacterBackward = key.NewBinding(
+		key.WithKeys("ctrl+left", "ctrl+b"),
+		key.WithHelp("ctrl+←", "character backward"),
+	)
+	in.KeyMap.CharacterForward = key.NewBinding(
+		key.WithKeys("ctrl+right", "ctrl+f"),
+		key.WithHelp("ctrl+→", "character forward"),
+	)
+	in.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("alt+enter", "shift+enter", "ctrl+j"),
+		key.WithHelp("alt+enter", "insert newline"),
+	)
 	return &ChatPanel{
 		api:           client,
 		auth:          state,
 		input:         in,
-		vp:            viewport.New(0, 0), // FIX(8.4.2.b): размеры выставит View
-		stickToBottom: true,               // FIX(8.4.2.b)
+		vp:            viewport.New(0, 0),
+		stickToBottom: true,
 	}
 }
 
@@ -130,7 +147,6 @@ func (p *ChatPanel) SetTarget(targetType, targetID, displayName string) tea.Cmd 
 	p.input.SetValue("")
 	p.input.Focus()
 
-	// FIX(8.4.2.b): новый чат — всегда стартуем у дна (увидим последние).
 	p.stickToBottom = true
 
 	p.reqSeq++
@@ -151,7 +167,7 @@ func (p *ChatPanel) Clear() {
 	p.input.Blur()
 	p.reqSeq++
 	p.activeReq = p.reqSeq
-	p.stickToBottom = true // FIX(8.4.2.b)
+	p.stickToBottom = true
 }
 
 func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
@@ -162,7 +178,6 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		}
 		p.loading = false
 		p.loadErr = nil
-		// FIX(8.4.1.b): история — сообщения уже на сервере, статус sent.
 		p.messages = p.messages[:0]
 		for _, am := range m.messages {
 			p.messages = append(p.messages, chatMessage{
@@ -184,7 +199,6 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		if !p.matchesIncoming(m.Message) {
 			return p, nil
 		}
-		// FIX(8.4.1.b): входящее с сервера — статус sent.
 		p.messages = append(p.messages, chatMessage{
 			Message: api.Message{
 				ID:        m.Message.ID,
@@ -197,7 +211,6 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		})
 		return p, nil
 
-	// FIX(8.4.1.b): Send() положил сообщение в WS-буфер — pending → sent.
 	case WSSendOKMsg:
 		for i := range p.messages {
 			if p.messages[i].localID == m.LocalID {
@@ -210,7 +223,6 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		}
 		return p, nil
 
-	// FIX(8.4.1.b): отправка провалилась — помечаем сообщение failed.
 	case WSSendFailedMsg:
 		for i := range p.messages {
 			if p.messages[i].localID == m.LocalID {
@@ -220,9 +232,6 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		}
 		return p, nil
 
-	// FIX(8.4.1.b): обрыв WS (вариант X). Все НАШИ исходящие
-	// (localID != 0) под подозрением: pending — точно не дошли;
-	// недавно-sent — могли уйти в мёртвый сокет. Перекрашиваем в failed.
 	case wsmsg.DisconnectedMsg:
 		now := time.Now()
 		for i := range p.messages {
@@ -242,28 +251,20 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		return p, nil
 
 	case tea.KeyMsg:
-		// FIX(8.4.1.e): Enter — отправка нового, Ctrl+R — ретрай failed.
-		// FIX(8.4.2.b): PgUp/PgDn — скролл viewport (до textinput, иначе
-		// textinput их съест без эффекта). Home/End НЕ перехватываем —
-		// они остаются за курсором в поле ввода (стандартное поведение).
-		// Оба действия только при сфокусированном поле ввода — для
-		// единообразия и чтобы ctrl+r не срабатывал вне чата.
 		if p.input.Focused() {
 			switch {
-			case m.Type == tea.KeyEnter:
+			case m.Type == tea.KeyEnter && !m.Alt:
 				return p, p.handleSend()
 			case m.String() == "ctrl+r":
 				return p, p.retryFailed()
 			case m.Type == tea.KeyPgUp, m.Type == tea.KeyPgDown:
 				var cmd tea.Cmd
 				p.vp, cmd = p.vp.Update(msg)
-				p.stickToBottom = p.vp.AtBottom() // FIX(8.4.2.b)
+				p.stickToBottom = p.vp.AtBottom()
 				return p, cmd
 			}
 		}
 
-	// FIX(8.4.2.b): колесо мыши → viewport. Хост (home.go) маршрутизирует
-	// wheel-события сюда, когда чат открыт и не activated addMode.
 	case tea.MouseMsg:
 		if m.Button == tea.MouseButtonWheelUp || m.Button == tea.MouseButtonWheelDown {
 			var cmd tea.Cmd
@@ -280,9 +281,6 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 	return p, nil
 }
 
-// FIX(8.4.1.e): wsType возвращает тип WS-сообщения для текущего чата.
-// Вынесено из handleSend, чтобы handleSend и retryFailed не дублировали
-// одно и то же правило (пункт #5 TODO).
 func (p *ChatPanel) wsType() string {
 	if p.targetType == ChatTargetDirect {
 		return "dm_message"
@@ -299,7 +297,6 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 		return nil
 	}
 
-	// FIX(8.4.1.b): выдаём трек-номер и кладём echo как pending.
 	p.localSeq++
 	localID := p.localSeq
 
@@ -317,19 +314,14 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 	p.input.SetValue("")
 
 	out := WSSendMsg{
-		Type:     p.wsType(), // FIX(8.4.1.e): было инлайн-вычисление
+		Type:     p.wsType(),
 		TargetID: p.targetID,
 		Content:  content,
-		LocalID:  localID, // FIX(8.4.1.b)
+		LocalID:  localID,
 	}
 	return func() tea.Msg { return out }
 }
 
-// FIX(8.4.1.e): retryFailed переотправляет ВСЕ failed-сообщения разом.
-// Каждое возвращается в statusPending и переотправляется с тем же
-// localID — новый не выдаём, иначе WSSendOKMsg/WSSendFailedMsg не найдут
-// запись по localID. Порядок отправки через tea.Batch не гарантирован —
-// на сервере сообщения могут перемешаться (принятое ограничение, вариант I).
 func (p *ChatPanel) retryFailed() tea.Cmd {
 	var cmds []tea.Cmd
 	for i := range p.messages {
@@ -358,12 +350,14 @@ func (p *ChatPanel) View(width, height int) string {
 	if !p.HasTarget() {
 		return p.renderEmpty(width, height)
 	}
-	if iw := width - 2; iw > 0 && p.input.Width != iw {
-		p.input.Width = iw
+
+	if iw := width - inputPrefixWidth; iw > 0 {
+		p.input.SetWidth(iw)
 	}
 
 	const headerH = 1
-	const inputH = 1
+	inputH := p.inputHeight()
+
 	bodyH := height - headerH - inputH
 	if bodyH < 1 {
 		bodyH = 1
@@ -373,7 +367,10 @@ func (p *ChatPanel) View(width, height int) string {
 	body := p.renderBody(width, bodyH)
 	input := p.renderInput(width)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, input)
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Render(lipgloss.JoinVertical(lipgloss.Left, header, body, input))
 }
 
 func (p *ChatPanel) renderEmpty(width, height int) string {
@@ -387,7 +384,67 @@ func (p *ChatPanel) renderHeader(width int) string {
 
 func (p *ChatPanel) renderInput(width int) string {
 	prefix := styles.StyleFaint.Render("> ")
-	return prefix + p.input.View()
+	field := lipgloss.NewStyle().
+		MaxHeight(p.inputHeight()).
+		Render(p.input.View())
+
+	return lipgloss.JoinHorizontal(lipgloss.Bottom, prefix, field)
+}
+
+func (p *ChatPanel) inputHeight() int {
+	w := p.input.Width()
+	if w < 1 {
+		return 1
+	}
+
+	lines := 0
+	for _, logical := range strings.Split(p.input.Value(), "\n") {
+		lines += visualRows(logical, w)
+	}
+
+	if lines < 1 {
+		lines = 1
+	}
+	if lines > maxInputHeight {
+		lines = maxInputHeight
+	}
+	return lines
+}
+
+// visualRows — сколько экранных рядов займёт одна логическая строка при
+// заданной ширине. Повторяет word-wrap из textarea: слово переносится
+// целиком, если не влезает; слово длиннее строки рвётся по ширине.
+func visualRows(s string, width int) int {
+	if s == "" {
+		return 1
+	}
+
+	rows := 1
+	cur := 0
+
+	for _, word := range strings.SplitAfter(s, " ") {
+		wl := lipgloss.Width(word)
+
+		// Слово само по себе длиннее строки — рвём по ширине.
+		if wl > width {
+			if cur > 0 {
+				rows++
+				cur = 0
+			}
+			rows += (wl - 1) / width
+			cur = wl % width
+			continue
+		}
+
+		if cur+wl > width {
+			rows++
+			cur = wl
+		} else {
+			cur += wl
+		}
+	}
+
+	return rows
 }
 
 func (p *ChatPanel) renderBody(width, height int) string {
@@ -409,16 +466,6 @@ func (p *ChatPanel) renderBody(width, height int) string {
 	}
 }
 
-// FIX(8.4.2.b): рендерим ВСЕ сообщения в content viewport'а, viewport
-// сам показывает кусок с прокруткой. Старое обрезание по высоте убрано:
-// история теперь полностью доступна через PgUp/PgDn/колесо мыши.
-//
-// SetContent + при stickToBottom — GotoBottom вызываются каждый кадр.
-// Для 50 сообщений это микросекунды; если станет много, добавим dirty-флаг.
-//
-// lipgloss.Height в конце нужен потому, что viewport.View() возвращает
-// до Height строк (может меньше, если контент короче окна). Без обёртки
-// поле ввода всплыло бы вверх при коротком чате.
 func (p *ChatPanel) renderMessages(width, height int) string {
 	p.vp.Width = width
 	p.vp.Height = height
@@ -428,7 +475,7 @@ func (p *ChatPanel) renderMessages(width, height int) string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(p.renderMessageLine(msg))
+		b.WriteString(p.renderMessageLine(msg, width))
 	}
 	p.vp.SetContent(b.String())
 	if p.stickToBottom {
@@ -438,11 +485,9 @@ func (p *ChatPanel) renderMessages(width, height int) string {
 	return lipgloss.NewStyle().Height(height).Render(p.vp.View())
 }
 
-// FIX(8.4.1.b): рендер строки зависит от статуса доставки.
-func (p *ChatPanel) renderMessageLine(m chatMessage) string {
+func (p *ChatPanel) renderMessageLine(m chatMessage, width int) string {
 	timeStr := styles.StyleFaint.Render(m.CreatedAt.Format("15:04"))
 
-	// FIX(8.4.2): ник своего сообщения красим иначе, чем чужие.
 	var nameStyle lipgloss.Style
 	if m.SenderID == p.auth.UserID {
 		nameStyle = styles.StyleMessageSenderSelf
@@ -452,22 +497,35 @@ func (p *ChatPanel) renderMessageLine(m chatMessage) string {
 	name := nameStyle.Render(m.Username)
 	sep := styles.StyleFaint.Render(" | ")
 
+	prefix := timeStr + "  " + name + sep
+
+	// Доступная ширина под текст = ширина панели минус префикс.
+	// lipgloss.Width меряет визуальные колонки, игнорируя ANSI-коды.
+	contentW := width - lipgloss.Width(prefix)
+	if contentW < minContentWidth {
+		contentW = minContentWidth
+	}
+
+	var content string
 	switch m.status {
 	case statusPending:
 		// серый текст + серое многоточие — "в пути"
-		content := styles.StyleFaint.Render(m.Content + " …")
-		return fmt.Sprintf("%s  %s%s%s", timeStr, name, sep, content)
+		content = styles.StyleFaint.Render(m.Content + " …")
 
 	case statusFailed:
 		// серый текст + красный крестик — глаз цепляется за ×,
 		// но текст остаётся читаемым
-		content := styles.StyleFaint.Render(m.Content)
-		mark := styles.StyleDanger.Render(" ×")
-		return fmt.Sprintf("%s  %s%s%s%s", timeStr, name, sep, content, mark)
+		content = styles.StyleFaint.Render(m.Content) + styles.StyleDanger.Render(" ×")
 
 	default: // statusSent
-		return fmt.Sprintf("%s  %s%s%s", timeStr, name, sep, m.Content)
+		content = styles.StyleMessageText.Render(m.Content)
 	}
+
+	// Width() включает word-wrap: lipgloss сам переносит по словам.
+	// JoinHorizontal выравнивает многострочный блок справа от префикса,
+	// автоматически добавляя отступ на строках 2+.
+	wrapped := lipgloss.NewStyle().Width(contentW).Render(content)
+	return lipgloss.JoinHorizontal(lipgloss.Top, prefix, wrapped)
 }
 
 func chatErrText(err error) string {
