@@ -30,6 +30,7 @@ const inputCharLimit = 2000
 const minContentWidth = 8
 const maxInputHeight = 3
 const inputPrefixWidth = 2
+const ackTimeout = 10 * time.Second
 
 type msgStatus int
 
@@ -44,6 +45,7 @@ type chatMessage struct {
 	localID     int // трек-номер нашего исходящего; 0 = чужое/историческое
 	clientMsgID string
 	status      msgStatus // статус доставки
+	sendAttempt int       // номер попытки отправки; матчит AckTimeoutMsg
 }
 
 type WSSendMsg struct {
@@ -224,6 +226,19 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		}
 		return p, nil
 
+	case wsmsg.AckTimeoutMsg:
+		for i := range p.messages {
+			cm := &p.messages[i]
+			if cm.clientMsgID != m.ClientMsgID {
+				continue
+			}
+			if cm.status == statusPending && cm.sendAttempt == m.Attempt {
+				cm.status = statusFailed
+			}
+			break
+		}
+		return p, nil
+
 	case WSSendOKMsg:
 		return p, nil
 
@@ -286,6 +301,12 @@ func (p *ChatPanel) wsType() string {
 	return "channel_message"
 }
 
+func ackTimeoutCmd(clientMsgID string, attempt int) tea.Cmd {
+	return tea.Tick(ackTimeout, func(time.Time) tea.Msg {
+		return wsmsg.AckTimeoutMsg{ClientMsgID: clientMsgID, Attempt: attempt}
+	})
+}
+
 func (p *ChatPanel) handleSend() tea.Cmd {
 	content := strings.TrimSpace(p.input.Value())
 	if content == "" {
@@ -299,6 +320,7 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 	localID := p.localSeq
 	clientMsgID := uuid.NewString()
 
+	const firstAttempt = 1
 	p.messages = append(p.messages, chatMessage{
 		Message: api.Message{
 			SenderID:  p.auth.UserID,
@@ -309,6 +331,7 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 		localID:     localID,
 		clientMsgID: clientMsgID,
 		status:      statusPending,
+		sendAttempt: firstAttempt,
 	})
 
 	p.input.SetValue("")
@@ -320,7 +343,10 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 		LocalID:     localID,
 		ClientMsgID: clientMsgID,
 	}
-	return func() tea.Msg { return out }
+	return tea.Batch(
+		func() tea.Msg { return out },
+		ackTimeoutCmd(clientMsgID, firstAttempt),
+	)
 }
 
 func (p *ChatPanel) retryFailed() tea.Cmd {
@@ -331,6 +357,7 @@ func (p *ChatPanel) retryFailed() tea.Cmd {
 			continue
 		}
 		cm.status = statusPending
+		cm.sendAttempt++
 
 		out := WSSendMsg{
 			Type:        p.wsType(),
@@ -339,7 +366,11 @@ func (p *ChatPanel) retryFailed() tea.Cmd {
 			LocalID:     cm.localID,
 			ClientMsgID: cm.clientMsgID,
 		}
-		cmds = append(cmds, func() tea.Msg { return out })
+		attempt := cm.sendAttempt
+		cmds = append(cmds,
+			func() tea.Msg { return out },
+			ackTimeoutCmd(cm.clientMsgID, attempt),
+		)
 	}
 	if len(cmds) == 0 {
 		return nil

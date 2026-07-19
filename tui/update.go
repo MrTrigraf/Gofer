@@ -56,7 +56,6 @@ func waitWSCmd(client *ws.Client) tea.Cmd {
 		case ws.EventDMCreated:
 			return wsmsg.DMCreatedMsg{}
 		case ws.EventAck:
-			slog.Info("DBG waitWS ack")
 			return wsmsg.AckMsg{
 				ClientMsgID: ev.Message.ClientMsgID,
 				ID:          ev.Message.ID,

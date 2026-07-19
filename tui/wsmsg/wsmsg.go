@@ -19,3 +19,8 @@ type AckMsg struct {
 	ID          string
 	CreatedAt   time.Time
 }
+
+type AckTimeoutMsg struct {
+	ClientMsgID string
+	Attempt     int
+}
