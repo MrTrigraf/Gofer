@@ -387,7 +387,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 		m.dmsLoading = true
 		return m, loadDMsCmd(m.apiClient)
 
-	case wsmsg.IncomingMsg, wsmsg.DisconnectedMsg, WSSendOKMsg, WSSendFailedMsg:
+	case wsmsg.IncomingMsg, wsmsg.DisconnectedMsg, WSSendOKMsg, WSSendFailedMsg, wsmsg.AckMsg: // FIX(dedup-2): пробрасываем ack в панель
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.Update(msg)
 		return m, cmd

@@ -22,9 +22,10 @@ type IncomingMessage struct {
 }
 
 type incomingWSMessage struct {
-	Type     string `json:"type"`
-	TargetID string `json:"target_id"`
-	Content  string `json:"content"`
+	Type        string `json:"type"`
+	TargetID    string `json:"target_id"`
+	Content     string `json:"content"`
+	ClientMsgID string `json:"client_msg_id"`
 }
 
 type outgoingWSMessage struct {
@@ -36,6 +37,15 @@ type outgoingWSMessage struct {
 	SenderID   string    `json:"sender_id"`
 	Username   string    `json:"username"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type outgoingAck struct {
+	Type        string    `json:"type"`
+	ClientMsgID string    `json:"client_msg_id"`
+	ID          string    `json:"id"`
+	TargetType  string    `json:"target_type"`
+	TargetID    string    `json:"target_id"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type outgoingEvent struct {
@@ -51,6 +61,7 @@ const (
 	msgTypeChannel   = "channel_message"
 	msgTypeDM        = "dm_message"
 	msgTypeDMCreated = "dm_created"
+	msgTypeAck       = "ack"
 )
 
 type Hub struct {
@@ -169,15 +180,18 @@ func (h *Hub) handleChannelMessage(parentCtx context.Context, sender *Client, in
 
 	channelID := in.TargetID
 	stored, err := h.messageRepo.Create(ctx, domain.Message{
-		UserID:    sender.userID,
-		Content:   in.Content,
-		ChannelID: &channelID,
+		UserID:      sender.userID,
+		Content:     in.Content,
+		ChannelID:   &channelID,
+		ClientMsgID: clientMsgIDPtr(in.ClientMsgID),
 	})
 	if err != nil {
 		slog.Error("ws: persist channel message failed",
 			"user", sender.userID, "channel", channelID, "err", err)
 		return
 	}
+
+	h.sendAck(sender.userID, in.ClientMsgID, stored, "channel", channelID)
 
 	out := outgoingWSMessage{
 		ID:         stored.ID,
@@ -240,11 +254,14 @@ func (h *Hub) handleDMMessage(parentCtx context.Context, sender *Client, in inco
 		UserID:       sender.userID,
 		Content:      in.Content,
 		DirectChatID: &chatID,
+		ClientMsgID:  clientMsgIDPtr(in.ClientMsgID),
 	})
 	if err != nil {
 		slog.Error("ws: persist DM failed", "user", sender.userID, "chat", chatID, "err", err)
 		return
 	}
+
+	h.sendAck(sender.userID, in.ClientMsgID, stored, "direct", chatID)
 
 	out := outgoingWSMessage{
 		ID:         stored.ID,
@@ -262,7 +279,38 @@ func (h *Hub) handleDMMessage(parentCtx context.Context, sender *Client, in inco
 		return
 	}
 
+	if recipientID == sender.userID {
+		return
+	}
+
 	h.deliver(recipientID, payload)
+}
+
+func (h *Hub) sendAck(userID, clientMsgID string, stored domain.Message, targetType, targetID string) {
+	if clientMsgID == "" {
+		return
+	}
+	ack := outgoingAck{
+		Type:        msgTypeAck,
+		ClientMsgID: clientMsgID,
+		ID:          stored.ID,
+		TargetType:  targetType,
+		TargetID:    targetID,
+		CreatedAt:   stored.CreatedAt,
+	}
+	payload, err := json.Marshal(ack)
+	if err != nil {
+		slog.Error("ws: marshal ack failed", "err", err)
+		return
+	}
+	h.deliver(userID, payload)
+}
+
+func clientMsgIDPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func (h *Hub) deliver(userID string, payload []byte) {

@@ -17,6 +17,7 @@ import (
 	"github.com/gofer/tui/styles"
 	"github.com/gofer/tui/ws"
 	"github.com/gofer/tui/wsmsg"
+	"github.com/google/uuid"
 )
 
 const (
@@ -26,7 +27,6 @@ const (
 
 const historyLoadLimit = 50
 const inputCharLimit = 2000
-const recentSentWindow = 10 * time.Second
 const minContentWidth = 8
 const maxInputHeight = 3
 const inputPrefixWidth = 2
@@ -34,26 +34,28 @@ const inputPrefixWidth = 2
 type msgStatus int
 
 const (
-	statusSent    msgStatus = iota // на сервере (история, входящие, подтверждённые)
-	statusPending                  // отправлено локально, ждём результата Send()
+	statusSent    msgStatus = iota // подтверждено сервером (история, входящие, ack)
+	statusPending                  // отправлено локально, ждём ack
 	statusFailed                   // доставка провалилась
 )
 
 type chatMessage struct {
 	api.Message
-	localID int       // трек-номер нашего исходящего; 0 = чужое/историческое
-	status  msgStatus // статус доставки
-	sentAt  time.Time // момент перехода в statusSent (для recentSentWindow)
+	localID     int // трек-номер нашего исходящего; 0 = чужое/историческое
+	clientMsgID string
+	status      msgStatus // статус доставки
 }
 
 type WSSendMsg struct {
-	Type     string
-	TargetID string
-	Content  string
-	LocalID  int
+	Type        string
+	TargetID    string
+	Content     string
+	LocalID     int
+	ClientMsgID string
 }
 
 // WSSendOKMsg — Send() успешно положил сообщение в WS-буфер.
+// Статус sent ставит только AckMsg (сервер подтвердил персист).
 type WSSendOKMsg struct {
 	LocalID int
 }
@@ -211,16 +213,18 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		})
 		return p, nil
 
-	case WSSendOKMsg:
+	case wsmsg.AckMsg:
 		for i := range p.messages {
-			if p.messages[i].localID == m.LocalID {
-				if p.messages[i].status == statusPending {
-					p.messages[i].status = statusSent
-					p.messages[i].sentAt = time.Now()
-				}
+			if p.messages[i].clientMsgID == m.ClientMsgID && p.messages[i].clientMsgID != "" {
+				p.messages[i].ID = m.ID
+				p.messages[i].CreatedAt = m.CreatedAt
+				p.messages[i].status = statusSent
 				break
 			}
 		}
+		return p, nil
+
+	case WSSendOKMsg:
 		return p, nil
 
 	case WSSendFailedMsg:
@@ -233,19 +237,13 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 		return p, nil
 
 	case wsmsg.DisconnectedMsg:
-		now := time.Now()
 		for i := range p.messages {
 			cm := &p.messages[i]
 			if cm.localID == 0 {
-				continue // чужое или историческое — не трогаем
+				continue // чужое или историческое
 			}
-			switch cm.status {
-			case statusPending:
+			if cm.status == statusPending {
 				cm.status = statusFailed
-			case statusSent:
-				if now.Sub(cm.sentAt) < recentSentWindow {
-					cm.status = statusFailed
-				}
 			}
 		}
 		return p, nil
@@ -299,6 +297,7 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 
 	p.localSeq++
 	localID := p.localSeq
+	clientMsgID := uuid.NewString()
 
 	p.messages = append(p.messages, chatMessage{
 		Message: api.Message{
@@ -307,17 +306,19 @@ func (p *ChatPanel) handleSend() tea.Cmd {
 			Content:   content,
 			CreatedAt: time.Now(),
 		},
-		localID: localID,
-		status:  statusPending,
+		localID:     localID,
+		clientMsgID: clientMsgID,
+		status:      statusPending,
 	})
 
 	p.input.SetValue("")
 
 	out := WSSendMsg{
-		Type:     p.wsType(),
-		TargetID: p.targetID,
-		Content:  content,
-		LocalID:  localID,
+		Type:        p.wsType(),
+		TargetID:    p.targetID,
+		Content:     content,
+		LocalID:     localID,
+		ClientMsgID: clientMsgID,
 	}
 	return func() tea.Msg { return out }
 }
@@ -330,20 +331,20 @@ func (p *ChatPanel) retryFailed() tea.Cmd {
 			continue
 		}
 		cm.status = statusPending
-		cm.sentAt = time.Time{} // pending его не читает, обнуляем для чистоты
 
 		out := WSSendMsg{
-			Type:     p.wsType(),
-			TargetID: p.targetID,
-			Content:  cm.Content,
-			LocalID:  cm.localID,
+			Type:        p.wsType(),
+			TargetID:    p.targetID,
+			Content:     cm.Content,
+			LocalID:     cm.localID,
+			ClientMsgID: cm.clientMsgID,
 		}
 		cmds = append(cmds, func() tea.Msg { return out })
 	}
 	if len(cmds) == 0 {
 		return nil
 	}
-	return tea.Batch(cmds...)
+	return tea.Sequence(cmds...)
 }
 
 func (p *ChatPanel) View(width, height int) string {

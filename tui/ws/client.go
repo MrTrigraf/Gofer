@@ -13,20 +13,22 @@ import (
 )
 
 type Outgoing struct {
-	Type     string `json:"type"`
-	TargetID string `json:"target_id"`
-	Content  string `json:"content"`
+	Type        string `json:"type"`
+	TargetID    string `json:"target_id"`
+	Content     string `json:"content"`
+	ClientMsgID string `json:"client_msg_id"`
 }
 
 type Incoming struct {
-	ID         string    `json:"id"`
-	Type       string    `json:"type"`
-	TargetType string    `json:"target_type"`
-	TargetID   string    `json:"target_id"`
-	Content    string    `json:"content"`
-	SenderID   string    `json:"sender_id"`
-	Username   string    `json:"username"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Type        string    `json:"type"`
+	TargetType  string    `json:"target_type"`
+	TargetID    string    `json:"target_id"`
+	Content     string    `json:"content"`
+	SenderID    string    `json:"sender_id"`
+	Username    string    `json:"username"`
+	ClientMsgID string    `json:"client_msg_id"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type EventKind int
@@ -35,9 +37,13 @@ const (
 	EventMessage EventKind = iota + 1
 	EventDisconnected
 	EventDMCreated
+	EventAck
 )
 
-const msgTypeDMCreated = "dm_created"
+const (
+	msgTypeDMCreated = "dm_created"
+	msgTypeAck       = "ack"
+)
 
 type Event struct {
 	Kind    EventKind
@@ -165,8 +171,11 @@ func (c *Client) readLoop() {
 		}
 
 		ev := Event{Kind: EventMessage, Message: in}
-		if in.Type == msgTypeDMCreated {
+		switch in.Type {
+		case msgTypeDMCreated:
 			ev = Event{Kind: EventDMCreated}
+		case msgTypeAck:
+			ev = Event{Kind: EventAck, Message: in}
 		}
 
 		select {

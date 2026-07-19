@@ -55,6 +55,13 @@ func waitWSCmd(client *ws.Client) tea.Cmd {
 			return wsmsg.DisconnectedMsg{}
 		case ws.EventDMCreated:
 			return wsmsg.DMCreatedMsg{}
+		case ws.EventAck:
+			slog.Info("DBG waitWS ack")
+			return wsmsg.AckMsg{
+				ClientMsgID: ev.Message.ClientMsgID,
+				ID:          ev.Message.ID,
+				CreatedAt:   ev.Message.CreatedAt,
+			}
 		}
 		return nil
 	}
@@ -87,7 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case wsConnectedMsg:
 		m.ws = msg.client
-		slog.Info("WS connected") // TEST(8.4.1.a)
+		slog.Info("WS connected")
 		return m, waitWSCmd(m.ws)
 
 	case wsDialFailedMsg:
@@ -108,6 +115,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, cmd = m.current.Update(msg)
 		return m, tea.Batch(cmd, waitWSCmd(m.ws))
 
+	case wsmsg.AckMsg:
+		var cmd tea.Cmd
+		m.current, cmd = m.current.Update(msg)
+		return m, tea.Batch(cmd, waitWSCmd(m.ws))
+
 	case wsmsg.DisconnectedMsg:
 		slog.Warn("WS disconnected")
 		m.ws = nil
@@ -123,9 +135,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		out := ws.Outgoing{
-			Type:     msg.Type,
-			TargetID: msg.TargetID,
-			Content:  msg.Content,
+			Type:        msg.Type,
+			TargetID:    msg.TargetID,
+			Content:     msg.Content,
+			ClientMsgID: msg.ClientMsgID,
 		}
 		if err := m.ws.Send(out); err != nil {
 			slog.Warn("WS send failed", "local_id", msg.LocalID, "err", err)

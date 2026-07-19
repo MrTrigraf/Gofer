@@ -1,6 +1,8 @@
 package wsmsg
 
 import (
+	"time"
+
 	"github.com/gofer/tui/ws"
 )
 
@@ -11,3 +13,9 @@ type IncomingMsg struct {
 type DisconnectedMsg struct{}
 
 type DMCreatedMsg struct{}
+
+type AckMsg struct {
+	ClientMsgID string
+	ID          string
+	CreatedAt   time.Time
+}

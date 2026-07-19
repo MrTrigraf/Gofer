@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/gofer/internal/domain"
 	"github.com/gofer/internal/dto"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,21 +22,47 @@ func NewMessageRepo(db *pgxpool.Pool) *MessageRepo {
 
 func (r *MessageRepo) Create(ctx context.Context, message domain.Message) (domain.Message, error) {
 	err := r.db.QueryRow(ctx, `
-        INSERT INTO messages (user_id, content, channel_id, direct_chat_id)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, user_id, content, channel_id, direct_chat_id, created_at
-    `, message.UserID, message.Content, message.ChannelID, message.DirectChatID).Scan(
+        INSERT INTO messages (user_id, content, channel_id, direct_chat_id, client_msg_id)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id, client_msg_id) DO NOTHING
+		RETURNING id, user_id, content, channel_id, direct_chat_id, client_msg_id, created_at
+    `, message.UserID, message.Content, message.ChannelID, message.DirectChatID, message.ClientMsgID).Scan(
 		&message.ID,
 		&message.UserID,
 		&message.Content,
 		&message.ChannelID,
 		&message.DirectChatID,
+		&message.ClientMsgID,
 		&message.CreatedAt,
 	)
-	if err != nil {
+	if err == nil {
+		return message, nil // обычный путь: вставили новую строку
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return domain.Message{}, fmt.Errorf("create message: %w", err)
 	}
 
+	return r.findByClientMsgID(ctx, message.UserID, message.ClientMsgID)
+}
+
+func (r *MessageRepo) findByClientMsgID(ctx context.Context, userID string, clientMsgID *string) (domain.Message, error) {
+	var message domain.Message
+	err := r.db.QueryRow(ctx, `
+		SELECT id, user_id, content, channel_id, direct_chat_id, client_msg_id, created_at
+		FROM messages
+		WHERE user_id = $1 AND client_msg_id = $2
+	`, userID, clientMsgID).Scan(
+		&message.ID,
+		&message.UserID,
+		&message.Content,
+		&message.ChannelID,
+		&message.DirectChatID,
+		&message.ClientMsgID,
+		&message.CreatedAt,
+	)
+	if err != nil {
+		return domain.Message{}, fmt.Errorf("create message: find existing by client_msg_id: %w", err)
+	}
 	return message, nil
 }
 

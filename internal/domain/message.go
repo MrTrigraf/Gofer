@@ -8,5 +8,6 @@ type Message struct {
 	Content      string
 	ChannelID    *string
 	DirectChatID *string
+	ClientMsgID  *string
 	CreatedAt    time.Time
 }
