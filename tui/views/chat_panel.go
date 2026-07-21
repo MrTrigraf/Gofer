@@ -294,6 +294,17 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 	return p, nil
 }
 
+// isChatMsg сообщает, адресовано ли сообщение панели чата.
+func isChatMsg(msg tea.Msg) bool {
+	switch msg.(type) {
+	case wsmsg.IncomingMsg, wsmsg.AckMsg, wsmsg.AckTimeoutMsg,
+		wsmsg.DisconnectedMsg, WSSendOKMsg, WSSendFailedMsg,
+		historyLoadedMsg, historyFailedMsg:
+		return true
+	}
+	return false
+}
+
 func (p *ChatPanel) wsType() string {
 	if p.targetType == ChatTargetDirect {
 		return "dm_message"

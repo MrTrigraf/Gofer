@@ -378,16 +378,12 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 
 	// === ЧАТ И WS ===
 
-	case historyLoadedMsg, historyFailedMsg:
-		var cmd tea.Cmd
-		m.chat, cmd = m.chat.Update(msg)
-		return m, cmd
-
 	case wsmsg.DMCreatedMsg:
 		m.dmsLoading = true
 		return m, loadDMsCmd(m.apiClient)
+	}
 
-	case wsmsg.IncomingMsg, wsmsg.DisconnectedMsg, WSSendOKMsg, WSSendFailedMsg, wsmsg.AckMsg, wsmsg.AckTimeoutMsg:
+	if isChatMsg(msg) {
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.Update(msg)
 		return m, cmd
