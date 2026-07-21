@@ -15,37 +15,22 @@ import (
 // === UPDATE ===
 
 func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
-	// Если активен попап — он перехватывает ВВОД, пока жив.
+	// Попап модален ТОЛЬКО для пользовательского ввода.
 	if m.popup != nil {
-		// Confirm-результат
 		if res, ok := msg.(popup.ResultMsg); ok {
 			m.popup = nil
 			return m, m.handlePopupResult(res)
 		}
-		// Form-результат
 		if res, ok := msg.(popup.FormResultMsg); ok {
 			m.popup = nil
 			return m, m.handleFormResult(res)
 		}
-		// Фоновые ответы сервера проходят мимо попапа — иначе попап,
-		// открытый во время загрузки, съест ответ и списки навсегда
-		// останутся в состоянии loading.
-		// СПИСОК ДОЛЖЕН СОВПАДАТЬ С ТИПАМИ ИЗ home_messages.go.
-		switch msg.(type) {
-		case ChannelsLoadedMsg, ChannelsLoadErrorMsg,
-			DMsLoadedMsg, DMsLoadErrorMsg,
-			CreateChannelDoneMsg, CreateChannelErrorMsg,
-			JoinChannelDoneMsg, JoinChannelErrorMsg,
-			StartDMDoneMsg, StartDMErrorMsg,
-			LeaveDoneMsg, LeaveErrorMsg,
-			DeleteDoneMsg, DeleteErrorMsg,
-			DeleteDMDoneMsg, DeleteDMErrorMsg:
-			// фоновый ответ сервера — падаем в основной switch ниже
-		default:
+		if isInputMsg(msg) {
 			updated, cmd := m.popup.Update(msg)
 			m.popup = updated
 			return m, cmd
 		}
+		// не ввод — падаем в основной switch ниже
 	}
 
 	switch msg := msg.(type) {
@@ -533,4 +518,12 @@ func (m *HomeModel) openDeleteDMConfirm(dmID string) {
 		"Delete",
 		true,
 	)
+}
+
+func isInputMsg(msg tea.Msg) bool {
+	switch msg.(type) {
+	case tea.KeyMsg, tea.MouseMsg:
+		return true
+	}
+	return false
 }
