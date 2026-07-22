@@ -61,9 +61,9 @@ type LoginModel struct {
 	// HTTP-клиент, инжектится снаружи.
 	apiClient *api.Client
 
-	// errorLine — красное сообщение под формой.
-	// Пока используется и для успехов (зелёным), и для ошибок (красным).
-	// Отдельного поля для попапа пока нет — сделаем в Заходе 3.
+	// errorLine — статусная строка под формой.
+	// Используется и для успехов (зелёным), и для ошибок (красным);
+	// какой именно цвет — решает errorOK.
 	errorLine string
 	errorOK   bool // если true — errorLine показывается зелёным (успех)
 
@@ -194,7 +194,10 @@ func (m *LoginModel) activate(id string) tea.Cmd {
 // === КОМАНДЫ (асинхронные HTTP-запросы) ===
 
 // loginCmd возвращает tea.Cmd, которая в горутине сделает запрос
-// и вернёт либо LoginSuccessMsg, либо LoginErrorMsg.
+// и вернёт либо auth.AuthenticatedMsg (успех), либо LoginErrorMsg.
+//
+// AuthenticatedMsg ловит НЕ этот экран, а главная Model в пакете tui:
+// она сохраняет AuthState и подменяет current на HomeModel.
 //
 // Bubble Tea сам запускает эту функцию в горутине и перехватывает Msg.
 func loginCmd(client *api.Client, username, password string) tea.Cmd {

@@ -159,7 +159,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 			"Clipboard unavailable",
 			"Copying is disabled on this system.\n\nInstall xclip, xsel or wl-copy to enable it.",
 		)
-		return m, m.popup.Init()
+		return m, nil
 
 	// === ВВОД ===
 

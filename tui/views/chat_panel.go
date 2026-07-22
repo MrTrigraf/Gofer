@@ -295,6 +295,16 @@ func (p *ChatPanel) Update(msg tea.Msg) (*ChatPanel, tea.Cmd) {
 }
 
 // isChatMsg сообщает, адресовано ли сообщение панели чата.
+//
+// Единственная точка, куда добавляется новый чат-тип: home_update.go
+// и update.go править не надо.
+//
+// wsmsg.DMCreatedMsg здесь ОТСУТСТВУЕТ намеренно — это не пропуск.
+// Он адресован HomeModel (перезагрузить список DM), панели чата
+// не нужен. Не добавляй его «для полноты»: ветка DMCreatedMsg
+// в home_update.go отрабатывает раньше и делает return, так что
+// до isChatMsg управление всё равно не дойдёт — получится мёртвая
+// запись, которая выглядит рабочей.
 func isChatMsg(msg tea.Msg) bool {
 	switch msg.(type) {
 	case wsmsg.IncomingMsg, wsmsg.AckMsg, wsmsg.AckTimeoutMsg,

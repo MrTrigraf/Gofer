@@ -1,6 +1,8 @@
 package views
 
 import (
+	"slices"
+
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gofer/pkg/clipboard"
@@ -88,10 +90,11 @@ func (m *HomeModel) SetSize(width, height int) { m.width, m.height = width, heig
 func (m *HomeModel) SetOrigin(x, y int)        { m.originX, m.originY = x, y }
 
 func (m *HomeModel) Hitboxes() []screen.Hitbox {
-	if m.popup != nil {
-		return append(m.hitboxes, m.popup.Hitboxes()...)
+	if m.popup == nil {
+		return m.hitboxes
 	}
-	return m.hitboxes
+	out := slices.Clone(m.hitboxes)
+	return append(out, m.popup.Hitboxes()...)
 }
 
 // === ХЕЛПЕРЫ СОСТОЯНИЯ ===
