@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/gofer/internal/domain"
@@ -68,16 +69,26 @@ func (uc *AuthUseCase) Register(ctx context.Context, username, password string) 
 func (uc *AuthUseCase) Login(ctx context.Context, username, password string) (domain.User, jwt.TokenPair, error) {
 	user, err := uc.userRepo.FindByUsername(ctx, username)
 	if err != nil {
-		return domain.User{}, jwt.TokenPair{}, domain.ErrUserNotFound
+		if errors.Is(err, domain.ErrNotFound) {
+			// Юзера нет — отвечаем ровно тем же, чем на неверный пароль.
+			return domain.User{}, jwt.TokenPair{}, domain.ErrInvalidCredentials
+		}
+		return domain.User{}, jwt.TokenPair{}, fmt.Errorf("login: find user: %w", err)
 	}
 
-	if err = uc.hasher.Compare(user.PasswordHash, password); err != nil {
+	if err := uc.hasher.Compare(user.PasswordHash, password); err != nil {
+		if !errors.Is(err, domain.ErrInvalidCredentials) {
+			slog.Error("login: password hash is unusable",
+				"user_id", user.ID,
+				"err", err,
+			)
+		}
 		return domain.User{}, jwt.TokenPair{}, domain.ErrInvalidCredentials
 	}
 
 	tokens, err := uc.tokenService.GenerateTokens(user.ID, user.Username)
 	if err != nil {
-		return domain.User{}, jwt.TokenPair{}, err
+		return domain.User{}, jwt.TokenPair{}, fmt.Errorf("login: generate tokens: %w", err)
 	}
 
 	return user, tokens, nil
@@ -91,8 +102,16 @@ func (uc *AuthUseCase) RefreshToken(ctx context.Context, refreshToken string) (j
 
 	user, err := uc.userRepo.FindByID(ctx, claims.UserID)
 	if err != nil {
-		return jwt.TokenPair{}, domain.ErrUserNotFound
+		if errors.Is(err, domain.ErrNotFound) {
+			return jwt.TokenPair{}, domain.ErrUserNotFound
+		}
+		return jwt.TokenPair{}, fmt.Errorf("refresh token: find user: %w", err)
 	}
 
-	return uc.tokenService.GenerateTokens(user.ID, user.Username)
+	tokens, err := uc.tokenService.GenerateTokens(user.ID, user.Username)
+	if err != nil {
+		return jwt.TokenPair{}, fmt.Errorf("refresh token: generate tokens: %w", err)
+	}
+
+	return tokens, nil
 }

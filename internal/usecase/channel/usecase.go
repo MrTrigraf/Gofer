@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -54,12 +55,19 @@ func (uc *ChannelUseCase) JoinChannel(ctx context.Context, channelID string, use
 
 	_, err = uc.channelRepo.FindByID(ctx, channelID)
 	if err != nil {
-		return domain.ErrGroupNotFound
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrGroupNotFound
+		}
+		return fmt.Errorf("join channel: find channel: %w", err)
 	}
 
+	// FIX(5): то же самое для пользователя.
 	_, err = uc.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return domain.ErrUserNotFound
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrUserNotFound
+		}
+		return fmt.Errorf("join channel: find user: %w", err)
 	}
 
 	err = uc.channelRepo.AddMember(ctx, channelID, userID)
@@ -73,12 +81,19 @@ func (uc *ChannelUseCase) JoinChannel(ctx context.Context, channelID string, use
 func (uc *ChannelUseCase) LeaveChannel(ctx context.Context, channelID string, userID string) error {
 	_, err := uc.channelRepo.FindByID(ctx, channelID)
 	if err != nil {
-		return domain.ErrGroupNotFound
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrGroupNotFound
+		}
+		return fmt.Errorf("leave channel: find channel: %w", err)
 	}
 
+	// FIX(5)
 	_, err = uc.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return domain.ErrUserNotFound
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrUserNotFound
+		}
+		return fmt.Errorf("leave channel: find user: %w", err)
 	}
 
 	err = uc.channelRepo.RemoveMember(ctx, channelID, userID)
@@ -101,7 +116,10 @@ func (uc *ChannelUseCase) ListChannels(ctx context.Context, userID string) ([]do
 func (uc *ChannelUseCase) DeleteChannel(ctx context.Context, channelID, userID string) error {
 	channel, err := uc.channelRepo.FindByID(ctx, channelID)
 	if err != nil {
-		return domain.ErrGroupNotFound
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrGroupNotFound
+		}
+		return fmt.Errorf("delete channel: find channel: %w", err)
 	}
 
 	if channel.CreatedBy != userID {
