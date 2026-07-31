@@ -33,6 +33,7 @@ func (h *ChannelHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	channels, err := h.channelUC.ListChannels(r.Context(), userCtx.UserID)
 	if err != nil {
+		slog.Error("list channels failed", "user", userCtx.UserID, "err", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -52,6 +53,7 @@ func (h *ChannelHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	ch, err := h.channelUC.CreateChannel(r.Context(), req.Name, userCtx.UserID)
 	if err != nil {
+		slog.Error("create channel failed", "user", userCtx.UserID, "err", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

@@ -88,10 +88,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, tokens, err := h.authUC.Login(r.Context(), req.Username, req.Password)
 	if err != nil {
-		if errors.Is(err, domain.ErrUserNotFound) {
-			httputil.WriteError(w, http.StatusNotFound, "user not found")
-			return
-		}
 		if errors.Is(err, domain.ErrInvalidCredentials) {
 			httputil.WriteError(w, http.StatusUnauthorized, "invalid credentials")
 			return

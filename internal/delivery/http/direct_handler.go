@@ -105,6 +105,7 @@ func (h *DirectHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	dms, err := h.directUC.ListDMs(r.Context(), userCtx.UserID)
 	if err != nil {
+		slog.Error("list dms failed", "user", userCtx.UserID, "err", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

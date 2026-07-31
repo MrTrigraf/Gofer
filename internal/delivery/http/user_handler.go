@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/gofer/internal/usecase/user"
@@ -25,6 +26,7 @@ func (h *UserHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	users, err := h.userUC.SearchUsers(r.Context(), query)
 	if err != nil {
+		slog.Error("search users failed", "query", query, "err", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
