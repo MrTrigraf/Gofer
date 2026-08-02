@@ -103,6 +103,17 @@ func NewLogin(apiClient *api.Client) *LoginModel {
 	return m
 }
 
+// SetNotice — показывает статусную строку под формой при СОЗДАНИИ экрана
+// извне (например, когда главная модель выкинула юзера на логин из-за
+// протухшей сессии). Переиспользует errorLine/errorOK — отдельного поля
+// под это не заводим.
+//
+// ok=false → красным (тревожное: "тебя выкинуло"), ok=true → зелёным.
+func (m *LoginModel) SetNotice(text string, ok bool) {
+	m.errorLine = text
+	m.errorOK = ok
+}
+
 // === Реализация интерфейса screen.Screen ===
 
 func (m *LoginModel) Init() tea.Cmd             { return nil }

@@ -69,3 +69,26 @@ func (c *Client) Register(ctx context.Context, username, password string) (User,
 func (c *Client) Health(ctx context.Context) error {
 	return c.do(ctx, http.MethodGet, "/api/v1/health", nil, nil)
 }
+
+// Refresh — POST /api/v1/auth/refresh.
+//
+// Обменивает refresh-токен на новую пару токенов. Используется, когда
+// access-токен протух и WS-реконнект упал с ErrUnauthorized.
+//
+// Возвращает новую пару при успехе или:
+//   - ErrInvalidCredentials — refresh-токен битый/протух (401)
+//   - ErrNotFound           — юзера больше нет (404)
+//   - ErrUnreachable        — сервер недоступен
+//   - ErrServer             — 5xx
+//
+// ErrInvalidCredentials и ErrNotFound на этом эндпоинте означают одно:
+// сессия мертва, надо заново логиниться.
+func (c *Client) Refresh(ctx context.Context, refreshToken string) (TokenPair, error) {
+	body := map[string]string{
+		"refresh_token": refreshToken,
+	}
+
+	var resp TokenPair
+	err := c.do(ctx, http.MethodPost, "/api/v1/auth/refresh", body, &resp)
+	return resp, err
+}

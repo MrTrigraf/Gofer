@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gofer/pkg/clipboard"
+	"github.com/gofer/tui/api"
 	"github.com/gofer/tui/auth"
 	"github.com/gofer/tui/screen"
 	"github.com/gofer/tui/views"
@@ -24,6 +26,15 @@ type wsDialFailedMsg struct {
 
 type wsReconnectMsg struct{}
 
+// wsRefreshedMsg — refresh удался, внутри новый access-токен.
+type wsRefreshedMsg struct {
+	token string
+}
+
+// wsAuthLostMsg — refresh провалился (токен мёртв / юзера нет).
+// Сессия окончена — уходим на экран логина.
+type wsAuthLostMsg struct{}
+
 const wsReconnectDelay = 3 * time.Second
 
 func dialWSCmd(url, token string) tea.Cmd {
@@ -33,6 +44,27 @@ func dialWSCmd(url, token string) tea.Cmd {
 			return wsDialFailedMsg{err: err}
 		}
 		return wsConnectedMsg{client: client}
+	}
+}
+
+// refreshTokenCmd — обменивает refresh-токен на новый access.
+// Успех → wsRefreshedMsg с новым токеном; провал → wsAuthLostMsg (на логин).
+//
+// ErrInvalidCredentials (401) и ErrNotFound (404) на /auth/refresh значат
+// одно: сессия мертва. Любая другая ошибка (сервер недоступен) — тоже
+// wsAuthLostMsg: без свежего токена реконнект всё равно невозможен, честнее
+// вернуть юзера на логин, чем крутить впустую.
+func refreshTokenCmd(client *api.Client, refreshToken string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		pair, err := client.Refresh(ctx, refreshToken)
+		if err != nil {
+			slog.Warn("token refresh failed, session lost", "err", err)
+			return wsAuthLostMsg{}
+		}
+		return wsRefreshedMsg{token: pair.AccessToken}
 	}
 }
 
@@ -97,12 +129,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitWSCmd(m.ws)
 
 	case wsDialFailedMsg:
+		if errors.Is(msg.err, ws.ErrUnauthorized) {
+			if m.refreshing {
+				slog.Info("WS unauthorized, refresh already in progress")
+				return m, nil
+			}
+			slog.Info("WS unauthorized, refreshing token")
+			m.refreshing = true
+			return m, refreshTokenCmd(m.apiClient, m.auth.RefreshToken)
+		}
 		slog.Warn("WS dial failed, will retry", "err", msg.err)
 		return m, scheduleReconnect()
 
 	case wsReconnectMsg:
 		slog.Info("WS reconnecting...")
 		return m, dialWSCmd(m.apiClient.WSURL(), m.auth.AccessToken)
+
+	case wsRefreshedMsg:
+		slog.Info("token refreshed, reconnecting WS")
+		m.refreshing = false
+		m.auth.AccessToken = msg.token
+		m.apiClient.SetAuth(msg.token)
+		return m, dialWSCmd(m.apiClient.WSURL(), msg.token)
+
+	case wsAuthLostMsg:
+		slog.Warn("session lost, returning to login")
+		m.refreshing = false
+		oldWS := m.ws
+		m.ws = nil
+		m.auth = auth.AuthState{}
+		login := views.NewLogin(m.apiClient)
+		login.SetNotice("⚠ Session expired — please log in again", false)
+		m.current = login
+		return m, tea.Batch(
+			closeWSCmd(oldWS),
+			m.current.Init(),
+		)
 
 	case wsmsg.IncomingMsg:
 		var cmd tea.Cmd

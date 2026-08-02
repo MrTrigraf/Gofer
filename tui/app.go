@@ -27,6 +27,7 @@ type Model struct {
 	netlink      netlinkStatus
 	copiedTarget string
 	ws           *ws.Client
+	refreshing   bool
 }
 
 func New(apiClient *api.Client) Model {
