@@ -53,6 +53,14 @@ func (h *ChannelHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	ch, err := h.channelUC.CreateChannel(r.Context(), req.Name, userCtx.UserID)
 	if err != nil {
+		if errors.Is(err, domain.ErrChannelNameEmpty) {
+			httputil.WriteError(w, http.StatusBadRequest, "channel name cannot be empty")
+			return
+		}
+		if errors.Is(err, domain.ErrChannelNameIsLong) {
+			httputil.WriteError(w, http.StatusBadRequest, "channel name must be at most 24 characters")
+			return
+		}
 		slog.Error("create channel failed", "user", userCtx.UserID, "err", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return

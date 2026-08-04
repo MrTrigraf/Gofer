@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofer/internal/domain"
 	"github.com/gofer/internal/dto"
@@ -29,7 +31,17 @@ func New(
 	}
 }
 
+const maxChannelNameLen = 24
+
 func (uc *ChannelUseCase) CreateChannel(ctx context.Context, name string, createdBy string) (domain.Channel, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return domain.Channel{}, domain.ErrChannelNameEmpty
+	}
+	if utf8.RuneCountInString(name) > maxChannelNameLen {
+		return domain.Channel{}, domain.ErrChannelNameIsLong
+	}
+
 	channel := domain.Channel{
 		Name:      name,
 		CreatedBy: createdBy,

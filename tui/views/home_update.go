@@ -280,7 +280,7 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 				"Channel name:",
 				"e.g. general",
 				"Create",
-				32,
+				24, // = maxChannelNameLen (usecase) = VARCHAR(24) (БД)
 			)
 			return m, m.popup.Init()
 

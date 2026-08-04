@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,6 +126,36 @@ func TestCreateChannel_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "general", ch.Name)
 	assert.Equal(t, "ch-1", ch.ID)
+}
+
+func TestCreateChannel_EmptyName(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	_, err := uc.CreateChannel(context.Background(), "   ", "user-1")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrChannelNameEmpty)
+	channelRepo.AssertNotCalled(t, "CreateWithMember",
+		mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestCreateChannel_NameTooLong(t *testing.T) {
+	userRepo := &MockUserRepo{}
+	channelRepo := &MockChannelRepo{}
+	messageRepo := &MockMessageRepo{}
+	uc := New(userRepo, channelRepo, messageRepo)
+
+	// 25 рун — на одну больше лимита (24, = VARCHAR(24) в БД).
+	longName := strings.Repeat("a", 25)
+	_, err := uc.CreateChannel(context.Background(), longName, "user-1")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrChannelNameIsLong)
+	channelRepo.AssertNotCalled(t, "CreateWithMember",
+		mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestJoinChannel_Success(t *testing.T) {

@@ -9,6 +9,7 @@ var (
 	ErrGroupNotFound           = errors.New("group not found")
 	ErrUsernameIsLong          = errors.New("username is long")
 	ErrChannelNameIsLong       = errors.New("channel name is long")
+	ErrChannelNameEmpty        = errors.New("channel name is empty")
 	ErrDirectChatNotFound      = errors.New("direct chat not found")
 	ErrDirectChatAlreadyExists = errors.New("direct chat already exists")
 	ErrMessageNotFound         = errors.New("message not found")
