@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gofer/internal/domain"
@@ -143,4 +144,60 @@ func TestLogin_WrongPassword(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrInvalidCredentials)
+}
+
+func TestRegister_Validation(t *testing.T) {
+	makeUC := func() *AuthUseCase {
+		userRepo := &MockUserRepo{}
+		hasher := &MockHasher{}
+		tokenSvc := &MockTokenService{}
+
+		// На случай, если вход валиден и дойдёт до репозитория/хешера.
+		userRepo.On("FindByUsername", mock.Anything, mock.Anything).
+			Return(domain.User{}, domain.ErrNotFound).Maybe()
+		hasher.On("Hash", mock.Anything).Return("hashed", nil).Maybe()
+		userRepo.On("Create", mock.Anything, mock.Anything).
+			Return(domain.User{ID: "id-1"}, nil).Maybe()
+
+		return New(userRepo, hasher, tokenSvc)
+	}
+
+	const validPass = "secret123"
+	const validUser = "alice"
+
+	tests := []struct {
+		name     string
+		username string
+		password string
+		wantErr  error // nil = ожидаем успех
+	}{
+		// --- username ---
+		{"username empty", "", validPass, domain.ErrUsernameEmpty},
+		{"username whitespace only", "   ", validPass, domain.ErrUsernameEmpty},
+		{"username 16 latin ok", "abcdefghijklmnop", validPass, nil}, // 16 символов = 16 байт
+		{"username 17 latin too long", "abcdefghijklmnopq", validPass, domain.ErrUsernameIsLong},
+		{"username 16 cyrillic ok", "абвгдеёжзийклмно", validPass, nil}, // 16 символов, но 32 байта
+		{"username valid", validUser, validPass, nil},
+
+		// --- password ---
+		{"password empty", validUser, "", domain.ErrPasswordTooShort},
+		{"password too short", validUser, "12345", domain.ErrPasswordTooShort},
+		{"password min ok", validUser, "123456", nil},               // ровно 6
+		{"password 64 ok", validUser, strings.Repeat("a", 64), nil}, // ровно 64
+		{"password 65 too long", validUser, strings.Repeat("a", 65), domain.ErrPasswordTooLong},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uc := makeUC()
+			_, err := uc.Register(context.Background(), tt.username, tt.password)
+
+			if tt.wantErr == nil {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tt.wantErr)
+		})
+	}
 }

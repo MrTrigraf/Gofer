@@ -8,6 +8,7 @@ var (
 	ErrUserNotFound            = errors.New("user not found")
 	ErrGroupNotFound           = errors.New("group not found")
 	ErrUsernameIsLong          = errors.New("username is long")
+	ErrUsernameEmpty           = errors.New("username is empty")
 	ErrChannelNameIsLong       = errors.New("channel name is long")
 	ErrChannelNameEmpty        = errors.New("channel name is empty")
 	ErrDirectChatNotFound      = errors.New("direct chat not found")

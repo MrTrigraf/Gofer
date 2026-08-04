@@ -54,9 +54,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			httputil.WriteError(w, http.StatusConflict, "user already exists")
 			return
 		}
-		// 400 — некорректный username
+		// 400 — пустой username
+		if errors.Is(err, domain.ErrUsernameEmpty) {
+			httputil.WriteError(w, http.StatusBadRequest, "username cannot be empty")
+			return
+		}
+		// 400 — слишком длинный username
 		if errors.Is(err, domain.ErrUsernameIsLong) {
-			httputil.WriteError(w, http.StatusBadRequest, "username must be 1..16 characters")
+			httputil.WriteError(w, http.StatusBadRequest, "username must be at most 16 characters")
 			return
 		}
 		// 400 — некорректный password

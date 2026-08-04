@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofer/internal/domain"
 	"github.com/gofer/internal/usecase"
@@ -26,8 +28,14 @@ func New(userRepo usecase.UserRepository, hasher usecase.Hasher, tokenService us
 	}
 }
 
+const maxUsernameLen = 16
+
 func (uc *AuthUseCase) Register(ctx context.Context, username, password string) (domain.User, error) {
-	if len(username) == 0 || len(username) > 16 {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return domain.User{}, domain.ErrUsernameEmpty
+	}
+	if utf8.RuneCountInString(username) > maxUsernameLen {
 		return domain.User{}, domain.ErrUsernameIsLong
 	}
 
