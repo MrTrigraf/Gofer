@@ -79,6 +79,14 @@ func (uc *DirectUseCase) DeleteDM(ctx context.Context, chatID, userID string) er
 		return fmt.Errorf("delete direct: %w", err)
 	}
 
+	if uc.publisher != nil {
+		other := direct.UserID2
+		if other == userID {
+			other = direct.UserID1
+		}
+		uc.publisher.NotifyDMDeleted(other)
+	}
+
 	return nil
 }
 

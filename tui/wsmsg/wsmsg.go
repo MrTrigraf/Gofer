@@ -14,6 +14,8 @@ type DisconnectedMsg struct{}
 
 type DMCreatedMsg struct{}
 
+type DMDeletedMsg struct{}
+
 type AckMsg struct {
 	ClientMsgID string
 	ID          string

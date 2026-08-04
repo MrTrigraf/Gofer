@@ -366,6 +366,10 @@ func (m *HomeModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 	case wsmsg.DMCreatedMsg:
 		m.dmsLoading = true
 		return m, loadDMsCmd(m.apiClient)
+
+	case wsmsg.DMDeletedMsg:
+		m.dmsLoading = true
+		return m, loadDMsCmd(m.apiClient)
 	}
 
 	if isChatMsg(msg) {

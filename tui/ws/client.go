@@ -37,11 +37,13 @@ const (
 	EventMessage EventKind = iota + 1
 	EventDisconnected
 	EventDMCreated
+	EventDMDeleted
 	EventAck
 )
 
 const (
 	msgTypeDMCreated = "dm_created"
+	msgTypeDMDeleted = "dm_deleted"
 	msgTypeAck       = "ack"
 )
 
@@ -174,6 +176,8 @@ func (c *Client) readLoop() {
 		switch in.Type {
 		case msgTypeDMCreated:
 			ev = Event{Kind: EventDMCreated}
+		case msgTypeDMDeleted:
+			ev = Event{Kind: EventDMDeleted}
 		case msgTypeAck:
 			ev = Event{Kind: EventAck, Message: in}
 		}

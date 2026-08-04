@@ -57,4 +57,5 @@ type TokenService interface {
 
 type Publisher interface {
 	NotifyDMCreated(recipientID string)
+	NotifyDMDeleted(recipientID string)
 }

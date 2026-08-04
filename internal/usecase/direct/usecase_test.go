@@ -107,6 +107,10 @@ func (m *MockPublisher) NotifyDMCreated(recipientID string) {
 	m.Called(recipientID)
 }
 
+func (m *MockPublisher) NotifyDMDeleted(recipientID string) {
+	m.Called(recipientID)
+}
+
 func TestStartDM_Success(t *testing.T) {
 	userRepo := &MockUserRepo{}
 	directRepo := &MockDirectRepo{}
@@ -225,10 +229,15 @@ func TestDeleteDM_Success(t *testing.T) {
 	directRepo.On("Delete", mock.Anything, "dm-1").
 		Return(nil)
 
+	// user-1 удаляет → уведомляем второго участника (user-2).
+	publisher.On("NotifyDMDeleted", "user-2").Return()
+
 	err := uc.DeleteDM(context.Background(), "dm-1", "user-1")
 
 	require.NoError(t, err)
 	directRepo.AssertCalled(t, "Delete", mock.Anything, "dm-1")
+	publisher.AssertCalled(t, "NotifyDMDeleted", "user-2")
+	publisher.AssertNotCalled(t, "NotifyDMDeleted", "user-1") // не себе
 }
 
 func TestDeleteDM_NotParticipant(t *testing.T) {
@@ -246,6 +255,7 @@ func TestDeleteDM_NotParticipant(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrForbidden)
 	directRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+	publisher.AssertNotCalled(t, "NotifyDMDeleted", mock.Anything)
 }
 
 func TestDeleteDM_NotFound(t *testing.T) {
@@ -263,6 +273,7 @@ func TestDeleteDM_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrDirectChatNotFound)
 	directRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+	publisher.AssertNotCalled(t, "NotifyDMDeleted", mock.Anything)
 }
 
 func TestGetDMHistory_Success(t *testing.T) {

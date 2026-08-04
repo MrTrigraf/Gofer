@@ -61,6 +61,7 @@ const (
 	msgTypeChannel   = "channel_message"
 	msgTypeDM        = "dm_message"
 	msgTypeDMCreated = "dm_created"
+	msgTypeDMDeleted = "dm_deleted"
 	msgTypeAck       = "ack"
 )
 
@@ -132,6 +133,20 @@ func (h *Hub) NotifyDMCreated(recipientID string) {
 	default:
 		slog.Warn("ws: push buffer full, dropping",
 			"user", recipientID, "event", msgTypeDMCreated)
+	}
+}
+
+func (h *Hub) NotifyDMDeleted(recipientID string) {
+	payload, err := json.Marshal(outgoingEvent{Type: msgTypeDMDeleted})
+	if err != nil {
+		slog.Error("ws: marshal dm_deleted failed", "err", err)
+		return
+	}
+	select {
+	case h.push <- pushMsg{userID: recipientID, payload: payload}:
+	default:
+		slog.Warn("ws: push buffer full, dropping",
+			"user", recipientID, "event", msgTypeDMDeleted)
 	}
 }
 

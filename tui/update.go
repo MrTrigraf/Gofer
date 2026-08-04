@@ -87,6 +87,8 @@ func waitWSCmd(client *ws.Client) tea.Cmd {
 			return wsmsg.DisconnectedMsg{}
 		case ws.EventDMCreated:
 			return wsmsg.DMCreatedMsg{}
+		case ws.EventDMDeleted:
+			return wsmsg.DMDeletedMsg{}
 		case ws.EventAck:
 			return wsmsg.AckMsg{
 				ClientMsgID: ev.Message.ClientMsgID,
@@ -172,6 +174,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, waitWSCmd(m.ws))
 
 	case wsmsg.DMCreatedMsg:
+		var cmd tea.Cmd
+		m.current, cmd = m.current.Update(msg)
+		return m, tea.Batch(cmd, waitWSCmd(m.ws))
+
+	case wsmsg.DMDeletedMsg:
 		var cmd tea.Cmd
 		m.current, cmd = m.current.Update(msg)
 		return m, tea.Batch(cmd, waitWSCmd(m.ws))
