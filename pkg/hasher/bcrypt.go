@@ -23,6 +23,9 @@ func New() *BcryptHasher {
 func (h *BcryptHasher) Hash(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+			return "", domain.ErrPasswordTooLong
+		}
 		return "", fmt.Errorf("hash password: %w", err)
 	}
 	return string(bytes), nil

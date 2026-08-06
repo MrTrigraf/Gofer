@@ -42,7 +42,7 @@ func (uc *AuthUseCase) Register(ctx context.Context, username, password string) 
 	if len(password) < 6 {
 		return domain.User{}, domain.ErrPasswordTooShort
 	}
-	if len(password) > 64 {
+	if len(password) > 72 {
 		return domain.User{}, domain.ErrPasswordTooLong
 	}
 

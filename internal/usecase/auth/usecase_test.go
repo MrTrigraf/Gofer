@@ -179,12 +179,16 @@ func TestRegister_Validation(t *testing.T) {
 		{"username 16 cyrillic ok", "абвгдеёжзийклмно", validPass, nil}, // 16 символов, но 32 байта
 		{"username valid", validUser, validPass, nil},
 
-		// --- password ---
+		// --- password (лимит = 72 БАЙТА, не символа — потолок bcrypt) ---
 		{"password empty", validUser, "", domain.ErrPasswordTooShort},
 		{"password too short", validUser, "12345", domain.ErrPasswordTooShort},
-		{"password min ok", validUser, "123456", nil},               // ровно 6
-		{"password 64 ok", validUser, strings.Repeat("a", 64), nil}, // ровно 64
-		{"password 65 too long", validUser, strings.Repeat("a", 65), domain.ErrPasswordTooLong},
+		{"password min ok", validUser, "123456", nil},                     // ровно 6 байт
+		{"password 72 bytes ok", validUser, strings.Repeat("a", 72), nil}, // ровно 72 = предел
+		{"password 73 bytes too long", validUser, strings.Repeat("a", 73), domain.ErrPasswordTooLong},
+		// Многобайтовый край: 36 кириллических букв = 72 байта → ok (граница по БАЙТАМ).
+		{"password 36 cyrillic ok (72 bytes)", validUser, strings.Repeat("а", 36), nil},
+		// 37 кириллических = 74 байта → too long, хотя символов всего 37.
+		{"password 37 cyrillic too long (74 bytes)", validUser, strings.Repeat("а", 37), domain.ErrPasswordTooLong},
 	}
 
 	for _, tt := range tests {

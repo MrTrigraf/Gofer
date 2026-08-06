@@ -70,7 +70,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, domain.ErrPasswordTooLong) {
-			httputil.WriteError(w, http.StatusBadRequest, "password must be at most 64 characters")
+			httputil.WriteError(w, http.StatusBadRequest, "password must be at most 72 bytes")
 			return
 		}
 		// fallback — 500
