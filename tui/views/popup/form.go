@@ -25,19 +25,18 @@ const (
 )
 
 type FormModel struct {
-	title       string
-	label       string
-	placeholder string
-	submitBtn   string
-	action      string
-
-	input   textinput.Model
-	focused formFocus
-
+	title            string
+	label            string
+	placeholder      string
+	submitBtn        string
+	action           string
+	input            textinput.Model
+	focused          formFocus
+	lastBtn          formFocus
+	errorLine        string
 	parentW, parentH int
 	originX, originY int
-
-	hitboxes []screen.Hitbox
+	hitboxes         []screen.Hitbox
 }
 
 func NewForm(action, title, label, placeholder, submitLabel string, charLimit int) *FormModel {
@@ -58,11 +57,17 @@ func NewForm(action, title, label, placeholder, submitLabel string, charLimit in
 		action:      action,
 		input:       in,
 		focused:     formFocusInput,
+		lastBtn:     formFocusSubmit, // FIX(5): дефолтная кнопка — Submit
 	}
 }
 
-// === screen.Screen ===
+// SetError показывает красную строку под полем ввода. Пустая строка убирает её.
+// Используется для инлайн-валидации (например, неверный адрес сервера).
+func (m *FormModel) SetError(text string) {
+	m.errorLine = text
+}
 
+// === screen.Screen ===
 func (m *FormModel) Init() tea.Cmd             { return textinput.Blink }
 func (m *FormModel) SetSize(w, h int)          { m.parentW, m.parentH = w, h }
 func (m *FormModel) SetOrigin(x, y int)        { m.originX, m.originY = x, y }
@@ -81,24 +86,30 @@ func (m *FormModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 			}
 			return m, m.submit()
 
-		case "tab":
-			m.focusNext()
-			m.applyFocus()
-			return m, nil
-
-		case "shift+tab":
-			m.focusPrev()
+		case "tab", "shift+tab":
+			// Tab переключает ДВЕ зоны — поле ↔ кнопки.
+			// С поля уходим на последнюю активную кнопку (по умолчанию Submit),
+			// с любой кнопки — обратно в поле.
+			if m.focused == formFocusInput {
+				m.focused = m.lastBtn
+			} else {
+				m.lastBtn = m.focused // запомним, где стояли
+				m.focused = formFocusInput
+			}
 			m.applyFocus()
 			return m, nil
 
 		case "left":
+			// В поле — стрелка двигает курсор текста.
 			if m.focused == formFocusInput {
 				var cmd tea.Cmd
 				m.input, cmd = m.input.Update(msg)
 				return m, cmd
 			}
+			// На кнопках — переход Cancel → Submit.
 			if m.focused == formFocusCancel {
 				m.focused = formFocusSubmit
+				m.lastBtn = formFocusSubmit
 				m.applyFocus()
 			}
 			return m, nil
@@ -109,8 +120,10 @@ func (m *FormModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 				m.input, cmd = m.input.Update(msg)
 				return m, cmd
 			}
+			// На кнопках — переход Submit → Cancel.
 			if m.focused == formFocusSubmit {
 				m.focused = formFocusCancel
+				m.lastBtn = formFocusCancel
 				m.applyFocus()
 			}
 			return m, nil
@@ -141,28 +154,6 @@ func (m *FormModel) Update(msg tea.Msg) (screen.Screen, tea.Cmd) {
 	return m, nil
 }
 
-func (m *FormModel) focusNext() {
-	switch m.focused {
-	case formFocusInput:
-		m.focused = formFocusSubmit
-	case formFocusSubmit:
-		m.focused = formFocusCancel
-	case formFocusCancel:
-		m.focused = formFocusInput
-	}
-}
-
-func (m *FormModel) focusPrev() {
-	switch m.focused {
-	case formFocusInput:
-		m.focused = formFocusCancel
-	case formFocusSubmit:
-		m.focused = formFocusInput
-	case formFocusCancel:
-		m.focused = formFocusSubmit
-	}
-}
-
 func (m *FormModel) applyFocus() {
 	if m.focused == formFocusInput {
 		m.input.Focus()
@@ -187,7 +178,6 @@ func (m *FormModel) cancel() tea.Cmd {
 }
 
 // === VIEW ===
-
 func (m *FormModel) View() string {
 	m.hitboxes = m.hitboxes[:0]
 
@@ -204,6 +194,11 @@ func (m *FormModel) View() string {
 	}
 	fixedInput := lipgloss.NewStyle().Width(m.input.Width).Render(m.input.View())
 	inputBox := inputStyle.Render(fixedInput)
+
+	errLine := " "
+	if m.errorLine != "" {
+		errLine = styles.StyleDanger.Render(m.errorLine)
+	}
 
 	submitText := "[ " + m.submitBtn + " ]"
 	cancelText := "[ Cancel ]"
@@ -239,6 +234,7 @@ func (m *FormModel) View() string {
 		"",
 		label,
 		inputBox,
+		errLine,
 		"",
 		buttonsRow,
 	)
@@ -275,8 +271,8 @@ func (m *FormModel) View() string {
 		ID: "form_input",
 	})
 
-	// Y кнопок = после inputBox + blank.
-	btnY := inputY + lipgloss.Height(inputBox) + 1
+	// Y кнопок = после inputBox + errLine + blank. +1 за строку ошибки.
+	btnY := inputY + lipgloss.Height(inputBox) + 2
 
 	submitX1 := innerStartX + leftPad
 	submitX2 := submitX1 + submitW - 1

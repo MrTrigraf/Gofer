@@ -12,6 +12,7 @@ import (
 	"github.com/gofer/tui/auth"
 	"github.com/gofer/tui/screen"
 	"github.com/gofer/tui/views"
+	"github.com/gofer/tui/views/popup"
 	"github.com/gofer/tui/ws"
 	"github.com/gofer/tui/wsmsg"
 )
@@ -26,16 +27,49 @@ type wsDialFailedMsg struct {
 
 type wsReconnectMsg struct{}
 
-// wsRefreshedMsg — refresh удался, внутри новый access-токен.
 type wsRefreshedMsg struct {
 	token string
 }
 
-// wsAuthLostMsg — refresh провалился (токен мёртв / юзера нет).
-// Сессия окончена — уходим на экран логина.
 type wsAuthLostMsg struct{}
 
 const wsReconnectDelay = 3 * time.Second
+const serverPingInterval = 5 * time.Second
+const serverPingTimeout = 5 * time.Second
+
+type serverPingResultMsg struct {
+	addr   string
+	online bool
+	gen    int
+}
+
+type serverPingTickMsg struct {
+	gen int
+}
+
+func pingServerCmd(addr string, gen int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), serverPingTimeout)
+		defer cancel()
+		err := api.Ping(ctx, addr)
+		return serverPingResultMsg{addr: addr, online: err == nil, gen: gen}
+	}
+}
+
+func pingAllServersCmd(servers []string, gen int) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(servers)+1)
+	for _, addr := range servers {
+		cmds = append(cmds, pingServerCmd(addr, gen))
+	}
+	cmds = append(cmds, scheduleServerPing(gen))
+	return tea.Batch(cmds...)
+}
+
+func scheduleServerPing(gen int) tea.Cmd {
+	return tea.Tick(serverPingInterval, func(time.Time) tea.Msg {
+		return serverPingTickMsg{gen: gen}
+	})
+}
 
 func dialWSCmd(url, token string) tea.Cmd {
 	return func() tea.Msg {
@@ -47,13 +81,6 @@ func dialWSCmd(url, token string) tea.Cmd {
 	}
 }
 
-// refreshTokenCmd — обменивает refresh-токен на новый access.
-// Успех → wsRefreshedMsg с новым токеном; провал → wsAuthLostMsg (на логин).
-//
-// ErrInvalidCredentials (401) и ErrNotFound (404) на /auth/refresh значат
-// одно: сессия мертва. Любая другая ошибка (сервер недоступен) — тоже
-// wsAuthLostMsg: без свежего токена реконнект всё равно невозможен, честнее
-// вернуть юзера на логин, чем крутить впустую.
 func refreshTokenCmd(client *api.Client, refreshToken string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -110,7 +137,88 @@ func closeWSCmd(client *ws.Client) tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.serverPopup != nil {
+		switch res := msg.(type) {
+		case popup.ServerConnectMsg:
+			m.serverPopup = nil
+			m.swallowNextKey = true
+			m.pingGen++
+			if err := m.store.Select(res.Addr); err == nil {
+				_ = m.store.Save()
+			}
+			m.apiClient.SetBaseURL(res.Addr)
+			return m, pingCmd(m.apiClient)
+		case popup.ServerAddMsg:
+			_ = m.store.Add(res.Addr)
+			_ = m.store.Save()
+			m.serverPopup = m.newServerPopup()
+			m.pingGen++
+			return m, pingAllServersCmd(m.store.Servers, m.pingGen)
+		case popup.ServerDeleteMsg:
+			wasSelected := m.store.Selected == res.Addr
+			m.store.Delete(res.Addr)
+			_ = m.store.Save()
+			delete(m.serverStatus, res.Addr) // адрес больше не нужен в карте статусов
+			if wasSelected {
+				m.apiClient.SetBaseURL("")
+				m.netlink = netlinkUnknown
+			}
+			m.serverPopup = m.newServerPopup()
+			m.pingGen++
+			return m, pingAllServersCmd(m.store.Servers, m.pingGen)
+		case popup.ServerCloseMsg:
+			m.serverPopup = nil
+			m.pingGen++
+			return m, nil
+		case popup.FormResultMsg:
+			updated, cmd := m.serverPopup.Update(msg)
+			m.serverPopup = updated
+			return m, cmd
+		}
+		if res, ok := msg.(serverPingResultMsg); ok {
+			if res.gen == m.pingGen {
+				if res.online {
+					m.serverStatus[res.addr] = popup.PingOnline
+				} else {
+					m.serverStatus[res.addr] = popup.PingOffline
+				}
+			}
+			return m, nil
+		}
+		if tick, ok := msg.(serverPingTickMsg); ok {
+			if tick.gen == m.pingGen {
+				return m, pingAllServersCmd(m.store.Servers, m.pingGen)
+			}
+			return m, nil
+		}
+		if isServerInputMsg(msg) {
+			updated, cmd := m.serverPopup.Update(msg)
+			m.serverPopup = updated
+			return m, cmd
+		}
+	}
+
 	switch msg := msg.(type) {
+
+	case tea.KeyMsg:
+		if m.swallowNextKey {
+			switch msg.String() {
+			case "enter", " ", "space":
+				return m, nil
+			case "ctrl+c", "ctrl+q":
+				m.swallowNextKey = false
+				return m, tea.Sequence(closeWSCmd(m.ws), tea.Quit)
+			default:
+				m.swallowNextKey = false
+			}
+		}
+		switch msg.String() {
+		case "ctrl+c", "ctrl+q":
+			return m, tea.Sequence(closeWSCmd(m.ws), tea.Quit)
+		}
+		var cmd tea.Cmd
+		m.current, cmd = m.current.Update(msg)
+		return m, cmd
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -255,15 +363,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, cmd = m.current.Update(msg)
 		return m, cmd
 
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "ctrl+q":
-			return m, tea.Sequence(closeWSCmd(m.ws), tea.Quit)
-		}
-		var cmd tea.Cmd
-		m.current, cmd = m.current.Update(msg)
-		return m, cmd
-
 	case tea.MouseMsg:
 		if msg.Action != tea.MouseActionPress {
 			return m, nil
@@ -274,6 +373,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Sequence(closeWSCmd(m.ws), tea.Quit)
 		case "footer_uuid":
 			return m, clipboard.CopyCmd("footer_uuid", m.auth.UserID)
+		case "open_servers":
+			m.serverPopup = m.newServerPopup()
+			m.pingGen++
+			return m, tea.Batch(
+				m.serverPopup.Init(),
+				pingAllServersCmd(m.store.Servers, m.pingGen),
+			)
 		}
 		var cmd tea.Cmd
 		m.current, cmd = m.current.Update(msg)
@@ -283,4 +389,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.current, cmd = m.current.Update(msg)
 	return m, cmd
+}
+
+func (m Model) newServerPopup() screen.Screen {
+	return popup.NewServer(m.store.Servers, m.store.Selected, m.serverStatus)
+}
+
+func isServerInputMsg(msg tea.Msg) bool {
+	switch msg.(type) {
+	case tea.KeyMsg, tea.MouseMsg:
+		return true
+	}
+	return false
 }

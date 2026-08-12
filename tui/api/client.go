@@ -49,6 +49,18 @@ func (c *Client) authHeader() string {
 	return c.accessToken
 }
 
+func (c *Client) SetBaseURL(baseURL string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.baseURL = baseURL
+}
+
+func (c *Client) base() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baseURL
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
@@ -65,7 +77,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		reqBody = bytes.NewBuffer(nil)
 	}
 
-	url := c.baseURL + path
+	url := c.base() + path
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return fmt.Errorf("api.do: build request: %w", err)
@@ -136,9 +148,9 @@ func buildHistoryPath(base string, limit int, before time.Time) string {
 }
 
 func (c *Client) WSURL() string {
-	u, err := url.Parse(c.baseURL)
+	u, err := url.Parse(c.base())
 	if err != nil {
-		return c.baseURL + "/ws"
+		return c.base() + "/ws"
 	}
 	switch u.Scheme {
 	case "https":
@@ -168,4 +180,22 @@ func (c *Client) GetChannelMessages(ctx context.Context, channelID string, limit
 		return nil, err
 	}
 	return out, nil
+}
+
+func Ping(ctx context.Context, addr string) error {
+	c := &http.Client{}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/api/v1/health", nil)
+	if err != nil {
+		return fmt.Errorf("api.Ping: build request: %w", err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("api.Ping: %w: %v", ErrUnreachable, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("api.Ping: %w: status=%d", ErrServer, resp.StatusCode)
+	}
+	return nil
 }

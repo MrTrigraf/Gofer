@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -8,28 +9,26 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gofer/tui"
 	"github.com/gofer/tui/api"
+	"github.com/gofer/tui/serverstore"
 )
 
 func main() {
-	// TEST(8.4.1.a): направляем slog в файл, чтобы логи не ломали TUI.
-	// Открой второй терминал и запусти: tail -f client.log
-	logFile, err := os.OpenFile("client.log",
-		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Fatalf("open log file: %v", err)
-	}
-	defer logFile.Close()
-	slog.SetDefault(slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	})))
-	slog.Info("=== client started ===")
 
-	// HTTP-клиент к серверу. Пока адрес жёстко прописан —
-	// в будущем вынесем в конфиг.
-	client := api.New("http://localhost:8080")
+	// При необходимости лог включается заменой io.Discard на файл/os.Stderr.
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	store, err := serverstore.Load()
+	if err != nil {
+		slog.Error("failed to load server store", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("server store loaded",
+		"count", len(store.Servers), "selected", store.Selected)
+
+	client := api.New(store.Selected)
 
 	p := tea.NewProgram(
-		tui.New(client),
+		tui.New(client, store),
 		tea.WithMouseCellMotion(),
 		tea.WithAltScreen(),
 	)

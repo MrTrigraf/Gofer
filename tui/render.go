@@ -98,10 +98,10 @@ func (m Model) renderNetlinkIndicator() string {
 	}
 }
 
-// renderFooter — статус пользователя слева.
+// renderFooter — статус пользователя слева, кнопка [ SERVERS ] справа.
 //
-//	До логина:   "◈ не авторизован"
-//	После:       "◈ {username}    {uuid_short}..."
+//	До логина:   "◈ not authorized"            [ SERVERS ]
+//	После:       "◈ {username}          {uuid_short}..."
 func (m Model) renderFooter(width int) string {
 	var content string
 	if m.auth.IsAuthenticated() {
@@ -125,9 +125,6 @@ func (m Model) renderFooter(width int) string {
 		innerW := width - 2
 		content = spaceBetween(left, rightText, innerW)
 
-		// Hitbox на правую часть футера (всегда там, где сейчас текст).
-		// Y футера: рамка(1) + header-content(1) + header-border(1) + body + footer-border(1) ?
-		// Проще — посчитать от конца окна.
 		footerY := m.height - 2 // одну строку отнимаем за нижнюю рамку AppFrame
 		rightW := lipgloss.Width(rightText)
 		rightX2 := m.width - 2 // одна ячейка справа — рамка AppFrame
@@ -138,7 +135,22 @@ func (m Model) renderFooter(width int) string {
 			ID: "footer_uuid",
 		})
 	} else {
-		content = styles.StyleFaint.Render("◈ не авторизован")
+		// "не авторизован" → английский; справа кнопка выбора сервера.
+		// Кнопка только ДО логина — сменить сервер можно лишь до входа.
+		left := styles.StyleFaint.Render("◈ not authorized")
+		right := styles.StyleAccent.Render("[ SERVERS ]")
+		innerW := width - 2
+		content = spaceBetween(left, right, innerW)
+
+		footerY := m.height - 2
+		rightW := lipgloss.Width(right)
+		rightX2 := m.width - 2
+		rightX1 := rightX2 - rightW + 1
+		*m.hitboxes = append(*m.hitboxes, screen.Hitbox{
+			X1: rightX1, Y1: footerY,
+			X2: rightX2, Y2: footerY,
+			ID: "open_servers",
+		})
 	}
 	return styles.StyleFooter.Width(width).Render(content)
 }
@@ -151,6 +163,14 @@ func (m Model) renderBody(width, height int) string {
 	m.current.SetSize(width, height)
 	m.current.SetOrigin(originX, originY)
 	bodyContent := m.current.View()
+
+	if m.serverPopup != nil {
+		m.serverPopup.SetSize(width, height)
+		m.serverPopup.SetOrigin(originX, originY)
+		popupContent := m.serverPopup.View()
+		*m.hitboxes = append(*m.hitboxes, m.serverPopup.Hitboxes()...)
+		return lipgloss.NewStyle().Width(width).Height(height).Render(popupContent)
+	}
 
 	*m.hitboxes = append(*m.hitboxes, m.current.Hitboxes()...)
 
