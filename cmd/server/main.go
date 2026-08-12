@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -50,9 +51,13 @@ func main() {
 }
 
 func mustLoadConfig() *config.Config {
-	cfg, err := config.Load()
+	configPath := flag.String("config", "config/config.yaml",
+		"path to config.yaml")
+	flag.Parse()
+
+	cfg, err := config.Load(*configPath)
 	if err != nil {
-		slog.Error("failed to load config", "err", err)
+		slog.Error("failed to load config", "path", *configPath, "err", err)
 		os.Exit(1)
 	}
 	return cfg

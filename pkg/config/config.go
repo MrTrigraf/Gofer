@@ -38,8 +38,8 @@ type JWTConfig struct {
 	RefreshTTL string `yaml:"refresh_ttl"`
 }
 
-func Load() (*Config, error) {
-	file, err := os.Open("config/config.yaml")
+func Load(path string) (*Config, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open config: %w", err)
 	}
