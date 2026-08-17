@@ -1,0 +1,49 @@
+services:
+  gofer_db:
+    container_name: gofer_db
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # Порт наружу не публикуется: доступ к БД только из docker-сети.
+    # Для локальной отладки на сервере: ports: ["127.0.0.1:5432:5432"]
+    volumes:
+      - ${DATA_DIR}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  gofer_migrate:
+    container_name: gofer_migrate
+    image: migrate/migrate:v4.18.1
+    restart: "no"
+    depends_on:
+      gofer_db:
+        condition: service_healthy
+    volumes:
+      - ../migration:/migration:ro
+    command:
+      - "-path=/migration"
+      - "-database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@gofer_db:5432/${POSTGRES_DB}?sslmode=disable"
+      - "up"
+
+  gofer_server:
+    container_name: gofer_server
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: gofer-server:latest
+    restart: unless-stopped
+    depends_on:
+      gofer_db:
+        condition: service_healthy
+      gofer_migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${SERVER_PORT}:8080"
+    volumes:
+      - ./config.prod.yaml:/etc/gofer/config.yaml:ro
